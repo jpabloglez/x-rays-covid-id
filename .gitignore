@@ -1,0 +1,19 @@
+# Data
+data/
+
+# Logs
+logs
+*.log
+
+# Editor directories and files
+.vscode/*
+*.pyc
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.cache

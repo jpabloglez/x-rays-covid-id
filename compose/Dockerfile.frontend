@@ -1,0 +1,30 @@
+FROM node:fermium-slim
+
+WORKDIR /var/www/app
+
+# RUN npm ci
+RUN npm create vite@latest
+# RUN npm install -g create-react-app
+# RUN npm init react-app frontend --use-npm
+RUN npm create vite@latest frontend --template react-ts
+
+WORKDIR /var/www/app/frontend
+
+ENV PATH /var/www/app/frontend/node_modules/.bin:$PATH
+
+RUN npm install --silent
+
+# Build the app
+# RUN npm run build
+
+# Change www-data user to match the host system UID and GID and chown www directory
+RUN usermod --non-unique --uid 1000 www-data \
+  && groupmod --non-unique --gid 1000 www-data \
+  && chown -R www-data:www-data /var/www
+
+USER www-data
+
+
+EXPOSE 3000
+
+#CMD ["npm", "run", "dev"]

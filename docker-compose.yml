@@ -1,0 +1,56 @@
+version: "3.4"
+services:
+
+  db-oftal:
+    image: postgres:12.2
+    container_name: db-oftal
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    networks:
+       - app-network 
+
+  backend-oftal:
+    build: 
+      context: .
+      dockerfile: ./compose/Dockerfile.backend
+    container_name: backend-oftal
+    image: backend-oftal
+    depends_on:
+      - db-oftal      
+    ports:
+      - 3080:3080
+    volumes:
+      - ./app/backend:/var/www/app/backend
+      - shared_volume:/var/www
+    command: python manage.py runserver 0.0.0.0:3080
+    tty: true
+    networks:
+       - app-network
+
+  frontend-oftal:
+    build: 
+      context: .
+      dockerfile: ./compose/Dockerfile.frontend
+    container_name: frontend-oftal
+    image: frontend-oftal
+    ports:
+      - 3000:3000
+    volumes:
+      - ./app/frontend/:/var/www/app/frontend
+      # - shared_volume:/var/www
+    command: npm run dev
+    # tty: true
+    networks:
+       - app-network
+
+volumes:
+  shared_volume:
+
+networks:
+  app-network:
