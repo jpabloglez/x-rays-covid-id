@@ -25,8 +25,9 @@ SECRET_KEY = 'django-insecure-v7%z7%u5&30x_o(l_6u3u*kn8rac7fr*rdac_$1@a^ouj$3@nv
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', '172.20.0.4', 'backend-xrays']
 
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 
@@ -55,9 +56,11 @@ MIDDLEWARE = [
 
 ]
 
-CORS_ORIGIN_WHITELIST = [
-    'http://localhost:3000',  # Replace with your React app's URL
-]
+# CORS_ORIGIN_WHITELIST = [
+#     'http://localhost:3008',  # Replace with your React app's URL
+# ]
+
+CORS_ORIGIN_ALLOW_ALL = True
 
 
 ROOT_URLCONF = 'backend.urls'
@@ -130,7 +133,6 @@ USE_TZ = True
 STATIC_URL = 'static/'
 MEDIA_ROOT = Path.joinpath(BASE_DIR, 'static')
 MEDIA_URL = '/media/'
-print("MEDIA_ROOT", MEDIA_ROOT)
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field

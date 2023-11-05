@@ -3,10 +3,10 @@ import React from "react";
 export default function Navbar({ }) {
   const [navbarOpen, setNavbarOpen] = React.useState(false);
   return (
-    <nav className="flex items-center justify-between flex-wrap bg-neutral-200 p-6 rounded-lg shadow-md">
+    <nav className="flex items-center justify-between flex-wrap bg-neutral-100 p-6 rounded-lg shadow-md">
             <div className="flex items-center flex-shrink-0 text-gray-500 mr-6">
                 <span className="font-semibold text-xl tracking-tight">
-                Portofolio
+                COVID-xr
                 </span>
             </div>
             <div className="block lg:hidden">
@@ -33,13 +33,7 @@ export default function Navbar({ }) {
                     href="#projects"
                     className="block mt-4 lg:inline-block lg:mt-0 text-gray-500 hover:text-white mr-4"
                 >
-                    Projects
-                </a>
-                <a
-                    href="#publications"
-                    className="block mt-4 lg:inline-block lg:mt-0 text-gray-500 hover:text-white"
-                >
-                    Publications
+                    References
                 </a>
                 </div>
                 <div>

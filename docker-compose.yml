@@ -1,11 +1,11 @@
 version: "3.4"
 services:
 
-  db-oftal:
+  db-xrays:
     image: postgres:12.2
-    container_name: db-oftal
+    container_name: db-xrays
     ports:
-      - 5432:5432
+      - 5444:5432
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -15,37 +15,37 @@ services:
     networks:
        - app-network 
 
-  backend-oftal:
+  backend-xrays:
     build: 
       context: .
       dockerfile: ./compose/Dockerfile.backend
-    container_name: backend-oftal
-    image: backend-oftal
+    container_name: backend-xrays
+    image: backend-xrays
     depends_on:
-      - db-oftal      
+      - db-xrays      
     ports:
       - 3080:3080
     volumes:
       - ./app/backend:/var/www/app/backend
-      - shared_volume:/var/www
+      - shared_volume:/var/www/static
     command: python manage.py runserver 0.0.0.0:3080
     tty: true
     networks:
        - app-network
 
-  frontend-oftal:
+  frontend-xrays:
     build: 
       context: .
       dockerfile: ./compose/Dockerfile.frontend
-    container_name: frontend-oftal
-    image: frontend-oftal
+    container_name: frontend-xrays
+    image: frontend-xrays
     ports:
       - 3000:3000
     volumes:
       - ./app/frontend/:/var/www/app/frontend
-      # - shared_volume:/var/www
+      - shared_volume:/var/www/static
     command: npm run dev
-    # tty: true
+    tty: true
     networks:
        - app-network
 
