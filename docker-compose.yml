@@ -8,9 +8,11 @@ services:
     ports:
       - 5444:5432
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-xrays}
+      # No fallback values: a credential written here is a credential in the
+      # repository. Compose refuses to start the service until .env supplies one.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?generate one, see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:

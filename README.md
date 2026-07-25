@@ -59,8 +59,13 @@ A migration of the backend to FastAPI is planned; the Postgres service in
 git clone https://github.com/jpabloglez/x-rays-covid-id.git
 cd x-rays-covid-id
 cp .env.example .env
+printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" >> .env
 docker compose up -d --build
 ```
+
+No credential in this repository has a default value. `POSTGRES_PASSWORD` is
+unset in `.env.example` on purpose, and compose refuses to start the database
+service until you generate one.
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:3080

@@ -75,3 +75,13 @@ jobs:
             exit 1
           fi
           echo "OK"
+
+      - name: No credential defaults in compose
+        run: |
+          # Every PASSWORD/SECRET/TOKEN value must be a bare ${VAR} reference:
+          # an inline default is a credential committed to the repository.
+          if grep -nE '^[[:space:]]*[A-Z_]*(PASSWORD|SECRET|TOKEN)[A-Z_]*:[[:space:]]*(.*:-|[^$[:space:]])' docker-compose.yml; then
+            echo "::error::docker-compose.yml has a hardcoded or defaulted credential"
+            exit 1
+          fi
+          echo "OK"
