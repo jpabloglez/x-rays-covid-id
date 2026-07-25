@@ -1,30 +1,24 @@
-FROM node:fermium-slim
+FROM node:20-slim
 
+# Dependencies live one level above the app directory so that the bind mount
+# compose places on /var/www/app/frontend does not shadow node_modules.
 WORKDIR /var/www/app
 
-# RUN npm ci
-RUN npm create vite@latest
-# RUN npm install -g create-react-app
-# RUN npm init react-app frontend --use-npm
-RUN npm create vite@latest frontend --template react-ts
+COPY ./app/frontend/package.json ./app/frontend/package-lock.json ./
+
+RUN npm ci
+
+ENV PATH=/var/www/app/node_modules/.bin:$PATH
+
+COPY ./app/frontend/ /var/www/app/frontend/
 
 WORKDIR /var/www/app/frontend
 
-ENV PATH /var/www/app/frontend/node_modules/.bin:$PATH
+# The node images already ship a uid/gid 1000 "node" user; match the host.
+RUN chown -R node:node /var/www
 
-RUN npm install --silent
-
-# Build the app
-# RUN npm run build
-
-# Change www-data user to match the host system UID and GID and chown www directory
-RUN usermod --non-unique --uid 1000 www-data \
-  && groupmod --non-unique --gid 1000 www-data \
-  && chown -R www-data:www-data /var/www
-
-USER www-data
-
+USER node
 
 EXPOSE 3000
 
-#CMD ["npm", "run", "dev"]
+CMD ["npm", "run", "dev"]

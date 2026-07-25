@@ -1,13 +1,6 @@
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.db import models
 from django.utils import timezone
-from django.contrib.auth.models import (
-    AbstractBaseUser, 
-    BaseUserManager, 
-    PermissionsMixin
-)
-
-# Create your models here.
-from django.contrib.auth.models import User
 
 ROLES = (
     (1, 'User'),
@@ -42,7 +35,8 @@ class UserManager(BaseUserManager):
         return user
 
     def get_queryset(self):
-        return super(UserManager, self).get_queryset()
+        return super().get_queryset()
+
 
 class User(AbstractBaseUser):
     """ User Model """
@@ -66,28 +60,16 @@ class User(AbstractBaseUser):
     def __str__(self):
         return self.email
 
+    # This model extends AbstractBaseUser rather than PermissionsMixin, so the
+    # two hooks the admin needs have to be supplied here. Granting them
+    # unconditionally would hand every account full admin rights.
     def has_perm(self, perm, obj=None):
         """ Does the user have a specific permission? """
-        return True
+        return self.is_active and self.is_superuser
 
     def has_module_perms(self, app_label):
         """ Does the user have permissions to view the app `app_label`? """
-        return True
-
-    # @property
-    # def is_staff(self):
-    #     """ Is the user a member of staff? """
-    #     return self.is_staff
-
-    # @property
-    # def is_active(self):
-    #     """ Is the user active? """
-    #     return self.is_active
-
-    # @property
-    # def is_superuser(self):
-    #     """ Is the user a admin member? """
-    #     return self.is_superuser
+        return self.is_active and self.is_superuser
 
 
 class Organization(models.Model):
@@ -111,7 +93,7 @@ class UserProfile(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, null=True)
     #organization = models.ForeignKey(
     #    Organization,
-    #    on_delete=models.CASCADE, 
+    #    on_delete=models.CASCADE,
     #    related_name='userprofile',
     #    null=True,)
     first_name = models.CharField(max_length=80)
