@@ -1,6 +1,18 @@
-Dockerfile
-.dockerignore
+.git
 .gitignore
-# Artifacts 
+.dockerignore
+.env
+
+# Build artifacts and dependencies
 build
+dist
 node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+
+# Local state that must never be baked into an image
+data/
+*.sqlite3
+*.log

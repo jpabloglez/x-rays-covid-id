@@ -1,13 +1,30 @@
-# Data
+# Data and local state
 data/
+*.sqlite3
+app/backend/media/
+
+# Secrets
+.env
+.env.*
+!.env.example
 
 # Logs
 logs
 *.log
 
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Node
+node_modules/
+dist/
+
 # Editor directories and files
 .vscode/*
-*.pyc
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -17,3 +34,6 @@ logs
 *.sln
 *.sw?
 .cache
+
+# WSL artifacts
+*:Zone.Identifier

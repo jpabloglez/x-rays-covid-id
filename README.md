@@ -1,96 +1,140 @@
-# X-rays COVID-nonCOVID classifier app
+# X-rays COVID / non-COVID classifier
 
-This is a machine learning application that classifies X-ray images as COVID-positive or non-COVID based on trained models. This is a demo prototype for detection of COVID-19 cases using X-ray imaging.
+A portfolio project working towards a chest-radiograph classifier with an
+honest evaluation story. **The classifier does not exist yet.** This repository
+currently contains the web application that will host it.
+
+## Status
+
+| Area | State |
+| --- | --- |
+| Image upload and display | Working |
+| Classification model | **Not implemented** — no model, no training code, no dataset |
+| User accounts and organisations | Models only; the API was removed (see below) |
+| Test suite | Upload endpoint only |
+
+What the app does today: you upload a JPEG or PNG, the backend validates and
+stores it under a content-addressed name, and the frontend renders it back.
+There is no inference step. Anything in the interface that suggests otherwise
+is aspirational, and this table is the source of truth.
+
+The roadmap — data acquisition, leakage controls, the model ladder, calibration
+and abstention, attribution overlays, reporting — is tracked separately from
+this file.
 
 ## Disclaimer
-Please note that this application is for demonstration purposes only and should not be used as a substitute for professional medical diagnosis or advice. The classification results provided by the app are based on trained machine learning models, which may have limitations and false positives/negatives. Always consult with medical experts and trusted healthcare professionals for accurate diagnosis, medical guidance, and treatment.
 
-The developers and contributors of this application are not responsible for any misuse or misinterpretation of the classification results or any direct or indirect consequences arising from the use of this application. The app should be used responsibly and in conjunction with proper medical expertise.
+This application is for demonstration purposes only and must not be used as a
+substitute for professional medical diagnosis or advice. Once a model exists,
+its outputs will carry the limitations of the public datasets it was trained on
+and will be subject to false positives and false negatives. Always consult
+qualified healthcare professionals for diagnosis and treatment.
 
-## Features
+Published work has repeatedly found that COVID classifiers trained on the
+available public chest X-ray collections learn dataset provenance rather than
+pathology — see DeGrave, Janizek & Lee (2021) and the systematic review by
+Roberts et al. (2021), which found none of 415 candidate models clinically
+usable. Any model this project produces will be evaluated with that failure
+mode as the primary hypothesis, not an afterthought.
 
-- X-ray Classification: The app uses machine learning models to classify X-ray images as either COVID-positive or non-COVID.
-- Web Interface: It provides a user-friendly web interface where users can upload X-ray images and receive classification results.
-- Deployment-ready: The app is designed for easy deployment, allowing users to set it up quickly and start using it with minimal configuration.
+The developers and contributors are not responsible for misuse or
+misinterpretation of any results this application produces.
 
-## Technologies
+## Stack
 
-- 🟪 TypeScript
-- ⚛️ React
-- 🔷 Node.js
-- 📦 Docker
-- 🌊 Git
+- Backend: Django 4.2 + Django REST Framework, SQLite
+- Frontend: React 18 + TypeScript + Vite 4 + Tailwind
+- Orchestration: Docker Compose
 
-## Usage
-Upload an X-ray image using the provided interface.
-Click the "Classify" button to initiate the classification process.
-Wait for the results to appear, indicating whether the X-ray image is COVID-positive or non-COVID.
-
-## License
-This project is licensed under the MIT License.
-Feel free to customize the above description to match the specifics of your X-rays COVID-nonCOVID classifier app, and include any additional sections or details that are relevant to your project.
+A migration of the backend to FastAPI is planned; the Postgres service in
+`docker-compose.yml` is staged for it and is not yet used.
 
 ## Prerequisites
 
-- Docker
+- Docker with Compose v2
 
-## Getting Started
+## Getting started
 
-To get the project running locally, follow these steps:
-
-1. Clone the repository:
-
-   ```sh
-   git clone https://github.com/yourusername/portfolio-app.git
-   cd portfolio-app
-
-
-## Setup
-* Starting  from base_config branch
-Run next commands:
+```sh
+git clone https://github.com/jpabloglez/x-rays-covid-id.git
+cd x-rays-covid-id
+cp .env.example .env
+printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" >> .env
+docker compose up -d --build
 ```
-docker-compose up -d --build
+
+No credential in this repository has a default value. `POSTGRES_PASSWORD` is
+unset in `.env.example` on purpose, and compose refuses to start the database
+service until you generate one.
+
+- Frontend: http://localhost:3000
+- Backend: http://localhost:3080
+- Django admin: http://localhost:3080/admin/
+
+Apply migrations and create an administrator on first run:
+
+```sh
+docker compose exec backend-xrays python manage.py migrate
+docker compose exec backend-xrays python manage.py createsuperuser
+```
+
+The frontend proxies `/api` and `/media` to the backend, so the browser stays
+same-origin and no CORS configuration is needed for local development.
+
+## Running without Docker
+
+```sh
+python -m venv .venv && source .venv/bin/activate
+pip install -r setup/requirements-dev.txt
+cd app/backend
+DJANGO_DEBUG=true python manage.py migrate
+DJANGO_DEBUG=true python manage.py runserver 0.0.0.0:3080
+```
+
+```sh
+cd app/frontend && npm ci && npm run dev
 ```
 
 ## Configuration
 
-    |--app
-    |--app/backend
-    |--app/frontend
+Every environment-dependent value is read from the environment; `.env.example`
+documents the full list. `DJANGO_SECRET_KEY` is mandatory whenever
+`DJANGO_DEBUG` is off — the app refuses to start without it rather than falling
+back to a key committed to the repository.
 
-## Backend
+## Tests and linting
 
-## Setup 
-After image is build and running
-```
-docker exec -it backend-app django-admin startproject backend
-```
-Once configured our project let's create our first django-app (users)
-```
-docker exec -it django-app bash 
-cd app && python manage.py startapp users
-```
-Then apply migrations and create superuser
-```
-docker exec -it django-app bash 
-cd app && python manage.py makemigrations 
-python manage.py migrate
-python manage.py cretesuperuser
-```
-## Setup 
-* Starting from master or main/dev branch
-Run next:
-```
-docker-compose build
-docker-compose up -d
-```
-Create new django-app using:
-```
-docker exec -it django-app python manage.py migrate
+```sh
+pip install -r setup/requirements-dev.txt
+cd app/backend && pytest
+ruff check .
 ```
 
-## Tailwind
+## Layout
 
-## References:
+```
+app/backend/    Django project: files (upload) and users (models only)
+app/frontend/   React + Vite single-page app
+compose/        Dockerfiles for the backend and frontend images
+setup/          Python requirements
+```
 
-* [React vs. Vue (Exact Todo App) By Example](https://medium.com/js-dojo/react-vs-vue-exact-todo-app-comparison-by-example-14cc56efc5e5)
+## Removed user API
+
+`users/` previously exposed list, retrieve, update and delete endpoints for
+every account with no authentication, backed by permission classes that raised
+`UnboundLocalError` before they could deny anything. Those views, URLs,
+serializers and permissions have been deleted. The models remain because
+`AUTH_USER_MODEL` points at them; the API will be rebuilt with real
+authentication during the FastAPI migration.
+
+## Security note
+
+An earlier revision of this repository committed `app/backend/db.sqlite3`,
+including two user rows with password hashes, and a hardcoded `SECRET_KEY`.
+Both are removed from the working tree. Until the history is rewritten those
+values remain reachable in earlier commits and must be treated as compromised.
+
+## License
+
+MIT — see `LICENSE`.

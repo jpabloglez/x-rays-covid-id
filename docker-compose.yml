@@ -1,56 +1,71 @@
-version: "3.4"
 services:
 
+  # Not yet used by the backend, which is still on SQLite. Kept so the Phase B
+  # migration to FastAPI + SQLAlchemy has a database waiting for it.
   db-xrays:
-    image: postgres:12.2
+    image: postgres:16
     container_name: db-xrays
     ports:
       - 5444:5432
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      # No fallback values: a credential written here is a credential in the
+      # repository. Compose refuses to start the service until .env supplies one.
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?generate one, see .env.example}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     volumes:
-      - ./data/db:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data
     networks:
-       - app-network 
+      - app-network
 
   backend-xrays:
-    build: 
+    build:
       context: .
       dockerfile: ./compose/Dockerfile.backend
     container_name: backend-xrays
     image: backend-xrays
     depends_on:
-      - db-xrays      
+      - db-xrays
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DJANGO_MEDIA_ROOT: ${DJANGO_MEDIA_ROOT:-/var/www/static}
     ports:
       - 3080:3080
     volumes:
       - ./app/backend:/var/www/app/backend
-      - shared_volume:/var/www/static
+      - media_volume:/var/www/static
     command: python manage.py runserver 0.0.0.0:3080
     tty: true
     networks:
-       - app-network
+      - app-network
 
   frontend-xrays:
-    build: 
+    build:
       context: .
       dockerfile: ./compose/Dockerfile.frontend
     container_name: frontend-xrays
     image: frontend-xrays
+    depends_on:
+      - backend-xrays
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      VITE_PROXY_TARGET: ${VITE_PROXY_TARGET:-http://backend-xrays:3080}
     ports:
       - 3000:3000
     volumes:
       - ./app/frontend/:/var/www/app/frontend
-      - shared_volume:/var/www/static
     command: npm run dev
     tty: true
     networks:
-       - app-network
+      - app-network
 
 volumes:
-  shared_volume:
+  media_volume:
+  db_data:
 
 networks:
   app-network:
