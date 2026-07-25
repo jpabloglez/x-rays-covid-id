@@ -110,17 +110,12 @@ class RsnaPneumonia(Source):
         first, or MONOCHROME1 studies hash as their own negatives and land in
         a different cluster from the identical image stored the other way up.
         """
-        import numpy as np
-        import pydicom
         from PIL import Image
-        from pydicom.pixel_data_handlers.util import apply_voi_lut
 
         from cxr.hashing import dhash, sha256_file
+        from cxr.preprocessing.dicom import decode
 
-        dataset = pydicom.dcmread(absolute)
-        pixels = apply_voi_lut(dataset.pixel_array, dataset).astype(np.float32)
-        if str(getattr(dataset, "PhotometricInterpretation", "")) == "MONOCHROME1":
-            pixels = pixels.max() - pixels
+        pixels = decode(absolute)
 
         low, high = float(pixels.min()), float(pixels.max())
         spread = high - low
