@@ -1,0 +1,109 @@
+# `cxr` — dataset assembly and leakage gates
+
+Research code for the chest radiograph classifier. **No model is trained yet.**
+What exists is the layer that has to come first: turning downloaded datasets
+into a validated manifest, splitting it so the splits mean something, and
+refusing to proceed when the corpus is confounded.
+
+This package never imports the web application, and the application never
+imports it. They will communicate through exactly two artifacts: a serialised
+model and a preprocessing config.
+
+## Why the gates exist
+
+Published COVID chest X-ray classifiers routinely report 98–99% accuracy.
+DeGrave, Janizek & Lee (2021) showed those numbers largely come from shortcut
+learning, and Roberts *et al.* (2021) reviewed 415 papers and found none
+clinically usable. The dominant cause is **source confounding**: positives from
+one repository, negatives from another, so the network learns the scanner, the
+crop convention or the burnt-in marker rather than the pathology.
+
+That is not an avoidable mistake here — it is forced by the available data:
+
+```
+$ cxr sources
+...
+Only ['covid_radiography'] can supply a COVID label. Every COVID image will
+come from one source, so source alone predicts that class and G4 will fail by
+construction. That is a property of the available public data, not a bug.
+```
+
+ChestX-ray14 (2017), RSNA Pneumonia (2018) and CheXpert (2019) all predate the
+pandemic and carry no COVID label. So a three-class corpus needs a fourth,
+pandemic-era source, and at that moment class becomes predictable from
+provenance. The gates measure how badly, rather than letting it pass unnoticed.
+
+## The gates
+
+| Gate | Asserts | Catches |
+| --- | --- | --- |
+| **G1** | No `patient_id` spans two splits | A follow-up film of the same chest in both train and test |
+| **G1b** | The external split is exactly one unseen source | An "external" set that is really an internal one |
+| **G2** | No perceptual-hash cluster spans two splits | Aggregate collections reposting each other's images, re-encoded |
+| **G3** | Source is not predictable from pixels | Acquisition signatures a network can read for free |
+| **G4** | Class and source are independent | How much of the label is available from provenance alone |
+
+Each returns a measured value, not just pass/fail — `G4 passed` is far less
+useful than `Cramér's V 0.31, threshold 0.40`, and the measured numbers are
+what the model card publishes.
+
+## Usage
+
+```sh
+pip install -e ml                 # add [imaging] for DICOM sources
+cxr sources                       # what is available and what it lacks
+cxr assemble --source chestxray14 --root data/raw/nih --out data/manifests/nih.parquet
+cxr assemble --source covid_radiography --root data/raw/covid --out data/manifests/covid.parquet
+cxr merge data/manifests/*.parquet --out data/manifests/corpus.parquet
+cxr split data/manifests/corpus.parquet --out data/manifests/split.parquet --holdout-source covid_radiography
+cxr gates data/manifests/split.parquet --images data/raw --json reports/gates.json
+```
+
+`cxr gates` exits non-zero when a gate fails. It is meant to sit in CI between
+assembling data and training on it.
+
+## Design decisions worth knowing
+
+**Patient ids are namespaced by source.** Patient `1` in RSNA and patient `1`
+in ChestX-ray14 are different people. Validation rejects any unprefixed id,
+because a collision makes G1 report a disjointness it never verified.
+
+**Sources that lack patient ids say so.** The COVID-19 Radiography Database
+publishes none, so its adapter synthesises one per image and G1 is blind for
+those rows. That is recorded, not papered over.
+
+**"Other pathology" is not "normal".** ChestX-ray14 rows with a finding that
+is not pneumonia are excluded rather than relabelled normal; RSNA's
+`No Lung Opacity / Not Normal` likewise. Relabelling them teaches the model
+that abnormal chests are healthy, and it is the most common misuse of both.
+
+**Unknown means unknown.** The COVID source does not record projection, so its
+`view` is `UNKNOWN` rather than assumed `PA` — an assumption there would
+corrupt the AP/PA stratification that the bias analysis depends on.
+
+**The near-duplicate threshold needs calibrating on real data.** Chest
+radiographs share their gross anatomy, so their hashes sit closer together than
+natural images and a threshold tuned on photographs will merge unrelated
+patients. Cluster at several thresholds; if a cluster contains two different
+`patient_id`s that are not a known duplicate pair, it is too loose.
+
+**G4 skips splits too small to score.** Below an expected cell count of five
+the chi-square approximation breaks down, and a small calibration slice would
+otherwise report a large association that is pure sampling noise. A gate that
+cries wolf gets switched off.
+
+## Tests
+
+```sh
+cd ml && pytest
+```
+
+Every gate is tested twice: that it passes clean data, and that it *fires* on
+deliberately planted leakage. The second half is the one that matters — a
+leakage detector only ever run on data believed clean would pass identically if
+it were a function returning `True`.
+
+Fixtures are synthetic, which is the only way to test a leakage detector
+properly: the test needs to plant the leakage and assert it is found. On real
+data you never know the ground truth of how confounded your corpus is, which is
+the situation these gates exist to escape.

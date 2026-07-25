@@ -1,5 +1,9 @@
 # Data and local state
+# Datasets are downloaded, never committed: several are licensed against
+# redistribution and all of them are far too large.
 data/
+ml/data/
+ml/reports/
 *.sqlite3
 app/backend/media/
 
@@ -15,6 +19,7 @@ logs
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .venv/

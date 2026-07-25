@@ -44,6 +44,54 @@ jobs:
         working-directory: app/backend
         run: pytest
 
+  ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ml pytest
+
+      - name: Tests
+        working-directory: ml
+        run: pytest
+
+      - name: The gates catch a confounded corpus
+        # Guards the guard: if this ever exits 0, the gates have stopped
+        # working and every later metric becomes untrustworthy.
+        run: |
+          cd ml && python - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "tests")
+          import numpy as np
+          from conftest import BORDERED, PLAIN, write_corpus
+          from cxr import manifest, splits
+          from cxr.gates import run_all
+          from cxr.gates.runner import any_failed, render
+
+          root = Path("/tmp/ci-corpus")
+          records = write_corpus(
+              root,
+              [
+                  ("chestxray14", PLAIN, "normal", 14),
+                  ("chestxray14", PLAIN, "pneumonia", 14),
+                  ("covid_radiography", BORDERED, "covid", 14),
+              ],
+              seed=2,
+          )
+          frame = manifest.from_records(records)
+          assigned = splits.assign(frame, splits.SplitConfig(n_folds=4, calibration_folds=4))
+          results = run_all(frame, assigned, image_root=root)
+          print(render(results))
+          assert any_failed(results), "the gates passed a corpus that is confounded by construction"
+          PY
+
   frontend:
     runs-on: ubuntu-latest
     steps:
