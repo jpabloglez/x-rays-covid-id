@@ -86,7 +86,7 @@ def near_duplicate_disjointness(
             ),
             measured=float(len(straddling)),
             threshold=0.0,
-            details={**details, "straddling_clusters": int(len(straddling))},
+            details={**details, "straddling_clusters": len(straddling)},
         )
 
     return GateResult(

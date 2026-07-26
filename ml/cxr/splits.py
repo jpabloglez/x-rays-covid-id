@@ -1,9 +1,12 @@
-"""Splitting, grouped by patient and aware of source.
+"""Splitting, grouped by patient and duplicate cluster, and aware of source.
 
-Two rules drive everything here. A patient's images never straddle a split, or
-the test set measures memorisation. And one whole source stays out of training
-entirely, because the number that matters is how the model does on a hospital
-it has never seen — not on a held-out slice of the same pooled distribution.
+Three rules drive everything here. A patient's images never straddle a split,
+or the test set measures memorisation. Neither do near-duplicates, which is a
+separate rule because the same radiograph appears in several public
+collections under unrelated patient ids — grouping by patient alone does not
+see it. And one whole source stays out of training entirely, because the
+number that matters is how the model does on a hospital it has never seen —
+not on a held-out slice of the same pooled distribution.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
+
+from cxr.dedupe import GROUP_COLUMN as DUPLICATE_GROUP
 
 TRAIN = "train"
 VAL = "val"
@@ -87,6 +92,47 @@ def assign(frame: pd.DataFrame, config: SplitConfig | None = None) -> pd.Series:
     return splits
 
 
+def grouping_key(frame: pd.DataFrame) -> pd.Series:
+    """The unit that must not straddle a split.
+
+    Patient and duplicate cluster are two overlapping relations, not one:
+    a patient can own an image that also has a twin in another collection under
+    a different patient id. Taking either key alone leaves the other's leakage
+    in place, and taking them as separate columns is not something a grouped
+    splitter can express. So they are merged into connected components — if two
+    rows share a patient *or* a cluster, they land in the same split, and so
+    does anything transitively reachable from them.
+
+    Falls back to patient id alone when the manifest has not been annotated,
+    which keeps this usable on a corpus that has not been hashed yet.
+    """
+    if DUPLICATE_GROUP not in frame.columns:
+        return frame["patient_id"]
+
+    parent: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def union(left: str, right: str) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parent[max(left_root, right_root)] = min(left_root, right_root)
+
+    patients = frame["patient_id"].astype("string")
+    clusters = "dup:" + frame[DUPLICATE_GROUP].astype("string")
+    for patient, cluster_id in zip(patients, clusters, strict=True):
+        union(str(patient), str(cluster_id))
+
+    return pd.Series(
+        [find(str(patient)) for patient in patients], index=frame.index, dtype="string"
+    )
+
+
 def _grouped_folds(
     frame: pd.DataFrame, *, n_splits: int, seed: int, parameter: str = "n_folds"
 ) -> list[pd.Index]:
@@ -96,14 +142,14 @@ def _grouped_folds(
     silently shrinking the calibration slice would change how well temperature
     scaling can be fitted without anyone being told.
     """
-    groups = frame["patient_id"]
+    groups = grouping_key(frame)
     labels = frame["label"]
 
     smallest_class = int(labels.value_counts().min())
     distinct_patients = int(groups.nunique())
     if n_splits > distinct_patients:
         raise SplitError(
-            f"cannot make {n_splits} folds from {distinct_patients} distinct patients; "
+            f"cannot make {n_splits} folds from {distinct_patients} distinct groups; "
             f"lower {parameter}"
         )
     if n_splits > smallest_class:

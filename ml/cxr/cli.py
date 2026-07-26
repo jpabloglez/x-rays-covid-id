@@ -2,6 +2,7 @@
 
     cxr sources                             what is available and what it lacks
     cxr assemble --source NAME --root DIR   scan a download into a manifest
+    cxr dedupe MANIFEST                     group near-duplicates, optionally drop
     cxr split MANIFEST                      assign patient-grouped splits
     cxr gates MANIFEST --images DIR         run the gates, exit non-zero on fail
 
@@ -17,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from cxr import manifest, sources, splits
+from cxr import dedupe, manifest, sources, splits
 from cxr.gates import run_all
 from cxr.gates.runner import any_failed, render, to_json
 from cxr.hashing import DEFAULT_THRESHOLD_BITS
@@ -37,6 +38,23 @@ def main(argv: list[str] | None = None) -> int:
     merge = subparsers.add_parser("merge", help="combine manifests into one corpus")
     merge.add_argument("inputs", nargs="+", type=Path)
     merge.add_argument("--out", required=True, type=Path)
+
+    dedupe_parser = subparsers.add_parser(
+        "dedupe", help="annotate near-duplicate groups, optionally dropping the extra copies"
+    )
+    dedupe_parser.add_argument("input", type=Path)
+    dedupe_parser.add_argument("--out", required=True, type=Path)
+    dedupe_parser.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD_BITS)
+    dedupe_parser.add_argument(
+        "--drop",
+        action="store_true",
+        help="keep one representative per group instead of only labelling them",
+    )
+    dedupe_parser.add_argument(
+        "--prefer",
+        default=",".join(dedupe.DEFAULT_PREFERENCE),
+        help="comma-separated source order deciding which copy survives --drop",
+    )
 
     split = subparsers.add_parser("split", help="assign patient-grouped splits")
     split.add_argument("input", type=Path)
@@ -66,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         "sources": _sources,
         "assemble": _assemble,
         "merge": _merge,
+        "dedupe": _dedupe,
         "split": _split,
         "gates": _gates,
     }[args.command](args)
@@ -113,6 +132,26 @@ def _merge(args: argparse.Namespace) -> int:
     manifest.write(combined, args.out)
     print(f"{len(combined)} images from {len(frames)} manifests -> {args.out}")
     print(manifest.summarise(combined).to_string())
+    return 0
+
+
+def _dedupe(args: argparse.Namespace) -> int:
+    frame = dedupe.annotate(manifest.read(args.input), threshold=args.threshold)
+    report = dedupe.summarise(frame)
+    print(report.to_string(index=False) if len(report) else "no multi-image clusters")
+
+    if args.drop:
+        preference = tuple(name.strip() for name in args.prefer.split(",") if name.strip())
+        frame, removed = dedupe.deduplicate(
+            frame, preference=preference, threshold=args.threshold
+        )
+        print(f"dropped {len(removed)} redundant copies, preferring {' > '.join(preference)}")
+        if len(removed):
+            print(removed.groupby(["source", "label"]).size().to_string())
+
+    frame.to_parquet(args.out, index=False)
+    print(f"{len(frame)} images -> {args.out}")
+    print(manifest.summarise(frame).to_string())
     return 0
 
 

@@ -183,7 +183,7 @@ def test_nih_groups_follow_ups_under_one_patient(tmp_path):
 
 
 def test_nih_requires_its_metadata_file(tmp_path):
-    with pytest.raises(SourceError, match="Data_Entry_2017.csv not found"):
+    with pytest.raises(SourceError, match=r"Data_Entry_2017\.csv not found"):
         ChestXray14().build(tmp_path)
 
 

@@ -44,7 +44,7 @@ def patient_disjointness(
             threshold=0.0,
             details={
                 "straddling_patients": straddling.index.tolist(),
-                "affected_images": int(len(affected)),
+                "affected_images": len(affected),
             },
         )
 
