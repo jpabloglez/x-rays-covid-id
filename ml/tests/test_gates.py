@@ -286,16 +286,17 @@ def test_results_serialise_for_the_model_card(clean_corpus, tmp_path):
     import json
 
     payload = json.loads(path.read_text())
-    assert {entry["gate"] for entry in payload} == {"G1", "G1b", "G2", "G3", "G4"}
-    probe = next(entry for entry in payload if entry["gate"] == "G3")
+    assert {entry["gate"] for entry in payload["gates"]} == {"G1", "G1b", "G2", "G3", "G4"}
+    probe = next(entry for entry in payload["gates"] if entry["gate"] == "G3")
     assert probe["measured"] is not None
+    assert payload["training_permitted"] is True
 
 
 def test_render_names_the_failures(confounded_corpus):
     root, frame = confounded_corpus
     assigned = splits.assign(frame, SplitConfig(n_folds=4, calibration_folds=4))
     text = render(run_all(frame, assigned, image_root=root))
-    assert "gates failed" in text
+    assert "block training" in text
     assert "Do not train" in text
 
 

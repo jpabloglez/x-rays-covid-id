@@ -20,7 +20,7 @@ import pandas as pd
 
 from cxr import dedupe, manifest, sources, splits
 from cxr.gates import run_all
-from cxr.gates.runner import any_failed, render, to_json
+from cxr.gates.runner import BLOCKING_GATES, evaluate, render, to_json
 from cxr.hashing import DEFAULT_THRESHOLD_BITS
 
 
@@ -78,6 +78,14 @@ def main(argv: list[str] | None = None) -> int:
     gates.add_argument("--duplicate-threshold", type=int, default=DEFAULT_THRESHOLD_BITS)
     gates.add_argument("--source-probe-threshold", type=float, default=0.75)
     gates.add_argument("--cramers-v-threshold", type=float, default=0.40)
+    gates.add_argument(
+        "--acknowledge",
+        default="",
+        metavar="G3,G4",
+        help="confound gates whose failure is expected and documented. Leakage gates "
+        f"({', '.join(sorted(BLOCKING_GATES))}) always block. Naming a gate that then "
+        "passes is an error, so the list cannot go stale unnoticed.",
+    )
 
     args = parser.parse_args(argv)
     return {
@@ -199,11 +207,12 @@ def _gates(args: argparse.Namespace) -> int:
         source_probe_threshold=args.source_probe_threshold,
         cramers_v_threshold=args.cramers_v_threshold,
     )
-    print(render(results))
+    acknowledged = {name.strip() for name in args.acknowledge.split(",") if name.strip()}
+    print(render(results, acknowledged))
     if args.json:
-        to_json(results, args.json)
+        to_json(results, args.json, acknowledged)
         print(f"\nMeasured values written to {args.json}")
-    return 1 if any_failed(results) else 0
+    return 0 if evaluate(results, acknowledged).ok else 1
 
 
 if __name__ == "__main__":

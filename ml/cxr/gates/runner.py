@@ -3,11 +3,24 @@
 Gates run to completion rather than short-circuiting on the first failure: the
 useful output is the whole picture, and G3 and G4 in particular are read
 together — either alone is much weaker evidence than the pair.
+
+Two kinds of failure are deliberately not treated the same. G1, G1b and G2 are
+defects: an image on both sides of a split makes every number downstream
+meaningless, and no experiment needs that. G3 and G4 are findings — a corpus
+assembled from a pre-pandemic pneumonia set and a pandemic-era COVID set is
+confounded by construction, and Track 1 exists precisely to train on it and
+measure what the confound is worth. Blocking that would be blocking the
+experiment.
+
+So confound gates can be acknowledged by name, and acknowledgement is checked
+rather than trusted: naming a gate that then passes is itself an error, because
+a stale acknowledgement silently disarms a live check.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -63,31 +76,117 @@ def run_all(
     return results
 
 
-def render(results: list[GateResult]) -> str:
+# Leakage defects. An image on both sides of a split invalidates every number
+# measured afterwards, so there is no experiment these can be acknowledged for.
+BLOCKING_GATES = frozenset({"G1", "G1b", "G2"})
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """What the gate set means once acknowledgements are applied."""
+
+    blocking: list[GateResult] = field(default_factory=list)
+    acknowledged: list[GateResult] = field(default_factory=list)
+    stale: list[str] = field(default_factory=list)
+    unknown: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not (self.blocking or self.stale or self.unknown)
+
+
+def evaluate(results: list[GateResult], acknowledged: set[str] | None = None) -> Verdict:
+    """Split failures into blocking defects and acknowledged confounds."""
+    named = set(acknowledged or ())
+    by_gate = {result.gate: result for result in results}
+
+    unknown = sorted(named - set(by_gate))
+    # A gate named as an acknowledged confound that did not fail: either it was
+    # fixed and the acknowledgement outlived it, or it never applied. Both mean
+    # the list is describing a corpus that no longer exists.
+    stale = sorted(name for name in named - set(unknown) if not by_gate[name].failed)
+
+    blocking, waived = [], []
+    for result in results:
+        if not result.failed:
+            continue
+        if result.gate in named and result.gate not in BLOCKING_GATES:
+            waived.append(result)
+        else:
+            blocking.append(result)
+
+    return Verdict(blocking=blocking, acknowledged=waived, stale=stale, unknown=unknown)
+
+
+def render(results: list[GateResult], acknowledged: set[str] | None = None) -> str:
     lines = [result.render() for result in results]
+    verdict = evaluate(results, acknowledged)
     failures = [result for result in results if result.failed]
     lines.append("")
-    if failures:
-        lines.append(f"{len(failures)} of {len(results)} gates failed. Do not train on this split.")
+
+    if verdict.unknown:
+        lines.append(f"Acknowledged gates that do not exist: {', '.join(verdict.unknown)}.")
+    for name in verdict.stale:
+        lines.append(
+            f"{name} is acknowledged as a known confound but did not fail. "
+            "Remove it from the acknowledgement list rather than carrying a check "
+            "that is no longer disarming anything."
+        )
+    if verdict.blocking:
+        blocked = ", ".join(result.gate for result in verdict.blocking)
+        waivable = [
+            result.gate
+            for result in verdict.blocking
+            if result.gate not in BLOCKING_GATES and result.gate not in (acknowledged or ())
+        ]
+        lines.append(
+            f"{len(verdict.blocking)} of {len(results)} gates block training: {blocked}. "
+            "Do not train on this split."
+        )
+        if waivable:
+            lines.append(
+                f"Confound gates can be acknowledged with --acknowledge {','.join(waivable)} "
+                "if training on a knowingly confounded corpus is the point."
+            )
+    elif verdict.acknowledged:
+        waived = ", ".join(result.gate for result in verdict.acknowledged)
+        lines.append(
+            f"{len(failures)} of {len(results)} gates failed; {waived} acknowledged as known "
+            "confounds. Training may proceed and the measured values belong in the model card."
+        )
     else:
         lines.append(f"All {len(results)} gates passed.")
     return "\n".join(lines)
 
 
-def to_json(results: list[GateResult], path: Path) -> None:
-    """Write the measured values for the model card to pick up."""
-    payload = [
-        {
-            "gate": result.gate,
-            "title": result.title,
-            "status": str(result.status),
-            "summary": result.summary,
-            "measured": result.measured,
-            "threshold": result.threshold,
-            "details": result.details,
-        }
-        for result in results
-    ]
+def to_json(
+    results: list[GateResult], path: Path, acknowledged: set[str] | None = None
+) -> None:
+    """Write the measured values for the model card to pick up.
+
+    Acknowledgements are recorded alongside the measurements, because a model
+    card that reports a confounded corpus without saying the confound was known
+    in advance is describing a different piece of work.
+    """
+    verdict = evaluate(results, acknowledged)
+    payload = {
+        "gates": [
+            {
+                "gate": result.gate,
+                "title": result.title,
+                "status": str(result.status),
+                "summary": result.summary,
+                "measured": result.measured,
+                "threshold": result.threshold,
+                "acknowledged": result.gate in (acknowledged or ()),
+                "details": result.details,
+            }
+            for result in results
+        ],
+        "acknowledged": sorted(acknowledged or ()),
+        "blocking": [result.gate for result in verdict.blocking],
+        "training_permitted": verdict.ok,
+    }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
