@@ -158,6 +158,7 @@ def train(
     seed_everything(config.seed)
 
     device = resolve_device()
+    output.mkdir(parents=True, exist_ok=True)
     shared = {"spec": spec, "cache": cache, "image_roots": image_roots}
 
     train_set = for_split(frame, "train", **shared, augment=augmentation(spec))
@@ -237,7 +238,21 @@ def train(
                 name: value.detach().cpu().clone()
                 for name, value in model.state_dict().items()
             }
-        elif best_epoch >= 0 and epoch - best_epoch >= config.patience:
+            # Persisted the moment it is found, not at the end of the run. An
+            # epoch here costs 40 minutes, so keeping the only copy of the best
+            # weights in memory means a crash at hour five loses everything.
+            torch.save(
+                {"epoch": epoch, "val_macro_auc": best_auc, "state_dict": best_state},
+                output / "best.pt",
+            )
+        # Written every epoch regardless, so an interrupted run still leaves a
+        # readable record of what it had reached.
+        (output / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+        # An independent check rather than the else-branch of the improvement
+        # test: an epoch that improves resets best_epoch, so the difference is
+        # zero and this cannot fire on the same pass anyway.
+        if best_epoch >= 0 and epoch - best_epoch >= config.patience:
             print(f"no improvement in {config.patience} epochs; stopping at {epoch}", flush=True)
             break
 
