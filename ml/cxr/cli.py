@@ -20,6 +20,7 @@ import pandas as pd
 from cxr import manifest, sources, splits
 from cxr.gates import run_all
 from cxr.gates.runner import any_failed, render, to_json
+from cxr.hashing import DEFAULT_THRESHOLD_BITS
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     gates.add_argument("input", type=Path, help="a manifest carrying a split column")
     gates.add_argument("--images", type=Path, default=None, help="image root, enables G3")
     gates.add_argument("--json", type=Path, default=None, help="write results for the model card")
-    gates.add_argument("--duplicate-threshold", type=int, default=6)
+    gates.add_argument("--duplicate-threshold", type=int, default=DEFAULT_THRESHOLD_BITS)
     gates.add_argument("--source-probe-threshold", type=float, default=0.75)
     gates.add_argument("--cramers-v-threshold", type=float, default=0.40)
 

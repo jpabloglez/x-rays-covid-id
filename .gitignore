@@ -2,6 +2,7 @@
 # Datasets are downloaded, never committed: several are licensed against
 # redistribution and all of them are far too large.
 data/
+datasets/
 ml/data/
 ml/reports/
 *.sqlite3

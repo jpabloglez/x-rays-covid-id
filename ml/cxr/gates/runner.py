@@ -18,6 +18,7 @@ from cxr.gates.g1_patient import external_is_source_pure, patient_disjointness
 from cxr.gates.g2_duplicates import near_duplicate_disjointness
 from cxr.gates.g3_source_probe import source_confound_probe
 from cxr.gates.g4_class_source import class_source_independence
+from cxr.hashing import DEFAULT_THRESHOLD_BITS
 
 
 def run_all(
@@ -26,7 +27,7 @@ def run_all(
     *,
     image_root: Path | None = None,
     features: np.ndarray | None = None,
-    duplicate_threshold: int = 6,
+    duplicate_threshold: int = DEFAULT_THRESHOLD_BITS,
     source_probe_threshold: float = 0.75,
     cramers_v_threshold: float = 0.40,
 ) -> list[GateResult]:
