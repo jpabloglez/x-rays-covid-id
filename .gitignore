@@ -4,6 +4,9 @@
 data/
 datasets/
 ml/data/
+# Trained weights: large binaries, reproducible from the manifest and the
+# recorded seed. The checkpoint metadata that belongs in review goes in the PR.
+ml/models/
 ml/reports/
 *.sqlite3
 app/backend/media/

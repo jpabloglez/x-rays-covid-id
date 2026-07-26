@@ -78,6 +78,32 @@ written into `gates.json` for the model card, because reporting a confounded
 corpus without recording that the confound was known in advance describes
 different work.
 
+## Training
+
+```sh
+cxr cache data/manifests/split.parquet --out data/cache/track1-320 \
+    --images covid_radiography=... --images rsna_pneumonia=... --target-size 320
+cxr train data/manifests/split.parquet --out models/track1 \
+    --cache data/cache/track1-320 --gates reports/gates.json
+```
+
+`train` reads the gate report and refuses a split with blocking failures, so
+the two are meant to run in that order. Acknowledged confounds are carried into
+the checkpoint and printed above every score.
+
+**Preprocessing is cached, augmentation is not.** Decoding 14,863 DICOMs
+through the VOI LUT every epoch would make data loading, not the GPU, decide
+how long a run takes. Caching the augmentation too would mean every epoch saw
+the same "random" transform, which is the same as not augmenting.
+
+**The cache is uint8, and that was measured rather than assumed.** It is a
+train/serve difference, which is what retired the two-executor design — so the
+round trip was measured on 80 real radiographs: 0.00875 in normalised units,
+exactly the round-to-nearest bound. The augmentation the model is trained to
+tolerate is ten times larger; the resize divergence that killed the
+two-executor design was 229 times larger and exceeded the normalisation scale.
+`test_cache.py` pins the bound.
+
 ## Design decisions worth knowing
 
 **Patient ids are namespaced by source.** Patient `1` in RSNA and patient `1`
