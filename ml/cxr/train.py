@@ -54,6 +54,43 @@ class TrainConfig:
         return self.batch_size * self.accumulate
 
 
+def resolve_device(prefer_cuda: bool = True):
+    """The device that actually works, not the one that claims to.
+
+    `torch.cuda.is_available()` is not sufficient. A PyTorch build compiled for
+    newer architectures than the installed card reports the GPU as available,
+    exposes its name and compute capability, and then fails at the first kernel
+    launch with `no kernel image is available for execution on the device`.
+    Measured here on a GTX 1050 (sm_61) against torch 2.13+cu130, whose arch
+    list starts at sm_75.
+
+    So availability is probed rather than trusted: one tiny matmul, and a fall
+    back to CPU with the reason stated. Silently training on CPU would be worse
+    than either -- a run that takes ten hours instead of one, for no visible
+    reason.
+    """
+    import torch
+
+    if not (prefer_cuda and torch.cuda.is_available()):
+        return torch.device("cpu")
+
+    device = torch.device("cuda")
+    try:
+        probe = torch.zeros(8, 8, device=device)
+        torch.mm(probe, probe).sum().item()
+    except Exception as error:  # any failure here means "use the CPU"
+        capability = torch.cuda.get_device_capability(0)
+        print(
+            f"CUDA reports {torch.cuda.get_device_name(0)} (sm_{capability[0]}{capability[1]}) "
+            f"but cannot run a kernel on it: {type(error).__name__}. This torch build targets "
+            f"{torch.cuda.get_arch_list()}. Falling back to CPU -- reinstall torch against a "
+            "CUDA build that includes this card to use the GPU.",
+            flush=True,
+        )
+        return torch.device("cpu")
+    return device
+
+
 def seed_everything(seed: int) -> None:
     import random
 
@@ -120,7 +157,7 @@ def train(
     model_config = model_config or ModelConfig()
     seed_everything(config.seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device()
     shared = {"spec": spec, "cache": cache, "image_roots": image_roots}
 
     train_set = for_split(frame, "train", **shared, augment=augmentation(spec))
@@ -162,7 +199,7 @@ def train(
             with torch.autocast(device.type, enabled=scaler.is_enabled()):
                 loss = loss_fn(model(images), targets) / config.accumulate
             scaler.scale(loss).backward()
-            running += float(loss) * config.accumulate
+            running += loss.detach().item() * config.accumulate
 
             if (step + 1) % config.accumulate == 0:
                 scaler.step(optimiser)
