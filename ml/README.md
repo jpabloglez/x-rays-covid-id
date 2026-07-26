@@ -91,6 +91,23 @@ cxr train data/manifests/split.parquet --out models/track1 \
 the two are meant to run in that order. Acknowledged confounds are carried into
 the checkpoint and printed above every score.
 
+**Install torch for your GPU before the extras.** Which CUDA build you get
+matters more than which release. A wheel compiled for newer architectures than
+your card installs cleanly, reports `torch.cuda.is_available()` as `True`, and
+then fails at the first kernel launch with `no kernel image is available for
+execution on the device`. That happened here: `timm` and `monai` pulled
+`torch 2.13+cu130` as a transitive dependency onto a GTX 1050, whose `sm_61` is
+below that build's `sm_75` floor. `cu126` works, because it ships `sm_60` and
+CUDA cubins are forward-compatible across minor revisions.
+
+```sh
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+```
+
+`resolve_device()` probes with a real matmul rather than trusting the
+availability flag, so a mismatch falls back to CPU with the card, the build's
+arch list and the fix printed — instead of crashing after the model is built.
+
 **Preprocessing is cached, augmentation is not.** Decoding 14,863 DICOMs
 through the VOI LUT every epoch would make data loading, not the GPU, decide
 how long a run takes. Caching the augmentation too would mean every epoch saw
