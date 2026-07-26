@@ -5,9 +5,12 @@
     cxr dedupe MANIFEST                     group near-duplicates, optionally drop
     cxr split MANIFEST                      assign patient-grouped splits
     cxr gates MANIFEST --images DIR         run the gates, exit non-zero on fail
+    cxr cache MANIFEST --images DIR         precompute preprocessing once
+    cxr train MANIFEST --cache DIR          fine-tune, calibrate, score
 
 `gates` returning non-zero is the point: it is meant to sit in CI between
-assembling data and training on it.
+assembling data and training on it. `train` refuses a split whose gate report
+lists blocking failures, so the two are meant to be run in that order.
 """
 
 from __future__ import annotations
@@ -87,6 +90,31 @@ def main(argv: list[str] | None = None) -> int:
         "passes is an error, so the list cannot go stale unnoticed.",
     )
 
+    cache_parser = subparsers.add_parser(
+        "cache", help="precompute deterministic preprocessing into a memmap"
+    )
+    cache_parser.add_argument("input", type=Path, help="a split manifest")
+    cache_parser.add_argument("--out", required=True, type=Path)
+    cache_parser.add_argument("--images", action="append", metavar="SOURCE=PATH", required=True)
+    cache_parser.add_argument("--target-size", type=int, default=320)
+    cache_parser.add_argument("--workers", type=int, default=4)
+
+    train_parser = subparsers.add_parser("train", help="fine-tune a backbone on a split manifest")
+    train_parser.add_argument("input", type=Path, help="a split manifest")
+    train_parser.add_argument("--out", required=True, type=Path)
+    train_parser.add_argument("--cache", type=Path, default=None)
+    train_parser.add_argument("--images", action="append", metavar="SOURCE=PATH", default=None)
+    train_parser.add_argument("--gates", type=Path, default=None, help="gates.json to embed")
+    train_parser.add_argument("--backbone", default="densenet121")
+    train_parser.add_argument("--epochs", type=int, default=20)
+    train_parser.add_argument("--batch-size", type=int, default=8)
+    train_parser.add_argument("--accumulate", type=int, default=2)
+    train_parser.add_argument("--learning-rate", type=float, default=3e-4)
+    train_parser.add_argument("--workers", type=int, default=2)
+    train_parser.add_argument("--seed", type=int, default=0)
+    train_parser.add_argument("--no-amp", action="store_true")
+    train_parser.add_argument("--no-pretrained", action="store_true")
+
     args = parser.parse_args(argv)
     return {
         "sources": _sources,
@@ -95,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         "dedupe": _dedupe,
         "split": _split,
         "gates": _gates,
+        "cache": _cache,
+        "train": _train,
     }[args.command](args)
 
 
@@ -174,6 +204,78 @@ def _split(args: argparse.Namespace) -> int:
     assigned = splits.assign(frame, config)
     frame.assign(split=assigned).to_parquet(args.out, index=False)
     print(splits.summarise(frame, assigned).to_string())
+    return 0
+
+
+def _cache(args: argparse.Namespace) -> int:
+    from cxr import cache as image_cache
+    from cxr.preprocessing import PreprocessingSpec
+
+    frame = pd.read_parquet(args.input)
+    roots = _image_roots(args.images)
+    if not isinstance(roots, dict):
+        roots = {source: Path(roots) for source in set(frame["source"])}
+
+    spec = PreprocessingSpec(target_size=args.target_size)
+    built = image_cache.build(
+        frame, args.out, spec=spec, image_roots=roots, workers=args.workers
+    )
+    gigabytes = len(built) * spec.target_size**2 / 1e9
+    print(f"cached {len(built)} images at {spec.target_size}px -> {args.out} ({gigabytes:.1f} GB)")
+    return 0
+
+
+def _train(args: argparse.Namespace) -> int:
+    import json
+
+    from cxr import cache as image_cache
+    from cxr.models import ModelConfig
+    from cxr.preprocessing import PreprocessingSpec
+    from cxr.train import TrainConfig, report
+    from cxr.train import train as run_training
+
+    frame = pd.read_parquet(args.input)
+    if "split" not in frame.columns:
+        print(f"{args.input} has no split column; run `cxr split` first", file=sys.stderr)
+        return 2
+
+    loaded = image_cache.load(args.cache) if args.cache else None
+    spec = loaded.spec if loaded else PreprocessingSpec()
+    roots = _image_roots(args.images)
+    if roots is not None and not isinstance(roots, dict):
+        roots = {source: Path(roots) for source in set(frame["source"])}
+
+    gates_payload = {}
+    if args.gates:
+        gates_payload = json.loads(Path(args.gates).read_text(encoding="utf-8"))
+        if gates_payload.get("blocking"):
+            print(
+                f"{args.gates} reports blocking gates {gates_payload['blocking']}; "
+                "fix the split rather than training on it",
+                file=sys.stderr,
+            )
+            return 1
+
+    checkpoint = run_training(
+        frame,
+        spec=spec,
+        output=args.out,
+        cache=loaded,
+        image_roots=roots,
+        model_config=ModelConfig(backbone=args.backbone, pretrained=not args.no_pretrained),
+        config=TrainConfig(
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            accumulate=args.accumulate,
+            learning_rate=args.learning_rate,
+            workers=args.workers,
+            seed=args.seed,
+            amp=not args.no_amp,
+        ),
+        gates=gates_payload,
+    )
+    print("\n" + report(checkpoint))
+    print(f"\nCheckpoint written to {args.out}")
     return 0
 
 
