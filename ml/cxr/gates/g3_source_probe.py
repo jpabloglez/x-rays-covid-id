@@ -39,10 +39,15 @@ def thumbnail_features(paths: list[Path], side: int = THUMBNAIL_SIDE) -> np.ndar
     brightness as a giveaway, so what survives is layout: borders, letterbox
     padding, burnt-in markers, the crop convention of the source.
     """
+    from cxr.preprocessing.reference import load_grayscale
+
     rows = []
     for path in paths:
-        with Image.open(path) as image:
-            grayscale = image.convert("L").resize((side, side), Image.BILINEAR)
+        # Via load_grayscale, not PIL: half this corpus is DICOM, and Pillow
+        # cannot open it. The probe must see every source or it silently
+        # scores a subset.
+        source_image = Image.fromarray(load_grayscale(path), mode="F")
+        grayscale = source_image.resize((side, side), Image.BILINEAR)
         pixels = np.asarray(grayscale, dtype=np.float32)
         centred = pixels - pixels.mean()
         spread = float(centred.std())

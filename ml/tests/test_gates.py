@@ -329,3 +329,17 @@ def test_g3_rejects_a_mapping_missing_a_source(tmp_path):
 def test_g3_still_accepts_a_single_root(clean_corpus):
     root, frame = clean_corpus
     assert source_confound_probe(frame, image_root=root).status is GateStatus.PASS
+
+
+def test_g3_thumbnails_can_read_dicom(tmp_path):
+    """Half the real corpus is DICOM, which Pillow cannot open. A probe that
+    crashes on one source cannot measure the confound between two."""
+    pytest.importorskip("pydicom")
+    import numpy as np
+    from cxr.gates.g3_source_probe import thumbnail_features
+    from tests.test_preprocessing import _write_dicom
+
+    path = _write_dicom(
+        tmp_path / "s.dcm", (np.random.default_rng(0).random((32, 32)) * 3000).astype("uint16")
+    )
+    assert thumbnail_features([path]).shape == (1, 32 * 32)
