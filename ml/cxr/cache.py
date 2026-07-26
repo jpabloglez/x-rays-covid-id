@@ -76,9 +76,9 @@ class ImageCache:
         return ref.normalise(ref.to_channels(windowed, self.spec.channels), self.spec)
 
 
-def deterministic_uint8(path: Path, spec: PreprocessingSpec) -> np.ndarray:
+def deterministic_uint8(path: Path | str, spec: PreprocessingSpec) -> np.ndarray:
     """Everything in `reference.apply` up to the point normalisation begins."""
-    image = ref.load_grayscale(path)
+    image = ref.load_grayscale(Path(path))
     windowed = ref.window(image, spec)
     if spec.resize_mode is ResizeMode.PAD_TO_SQUARE:
         windowed = ref.pad_to_square(windowed, spec.pad_value)
@@ -94,13 +94,14 @@ def _one(job: tuple[int, str, str]) -> tuple[int, np.ndarray]:
 
 def build(
     frame: pd.DataFrame,
-    directory: Path,
+    directory: Path | str,
     *,
     spec: PreprocessingSpec,
     image_roots: dict[str, Path],
     workers: int = 4,
 ) -> ImageCache:
     """Preprocess every row once and write the result to `directory`."""
+    directory = Path(directory)
     missing = sorted(set(frame["source"]) - set(image_roots))
     if missing:
         raise CacheError(f"no image root given for source(s): {missing}")
@@ -133,13 +134,14 @@ def build(
     return load(directory)
 
 
-def load(directory: Path, *, expect: PreprocessingSpec | None = None) -> ImageCache:
+def load(directory: Path | str, *, expect: PreprocessingSpec | None = None) -> ImageCache:
     """Open an existing cache, refusing one built under a different spec.
 
     Reusing a cache whose spec has drifted is the quiet version of training on
     one preprocessing and serving another, so it is an error rather than a
     warning.
     """
+    directory = Path(directory)
     index_path = directory / INDEX_FILE
     if not index_path.exists():
         raise CacheError(f"no cache index at {index_path}; run `cxr cache` first")
