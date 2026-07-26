@@ -57,6 +57,11 @@ jobs:
       - name: Install
         run: pip install -e ml pytest
 
+      - name: Install imaging extra
+        # MONAI and CPU torch: needed for the training pipeline tests. The
+        # gates deliberately do not depend on these, so they still run fast.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install monai pydicom
+
       - name: Tests
         working-directory: ml
         run: pytest
