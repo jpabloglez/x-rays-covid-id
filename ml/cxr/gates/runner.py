@@ -25,7 +25,7 @@ def run_all(
     frame: pd.DataFrame,
     splits: pd.Series,
     *,
-    image_root: Path | None = None,
+    image_root: Path | dict[str, Path] | None = None,
     features: np.ndarray | None = None,
     duplicate_threshold: int = DEFAULT_THRESHOLD_BITS,
     source_probe_threshold: float = 0.75,

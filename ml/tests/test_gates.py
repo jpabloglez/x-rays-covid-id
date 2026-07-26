@@ -297,3 +297,35 @@ def test_render_names_the_failures(confounded_corpus):
     text = render(run_all(frame, assigned, image_root=root))
     assert "gates failed" in text
     assert "Do not train" in text
+
+
+# --------------------------------------------------------------------------
+# Per-source image roots
+# --------------------------------------------------------------------------
+
+
+def test_g3_resolves_each_source_against_its_own_root(tmp_path):
+    """Sources are downloaded independently and rarely share a parent, so a
+    single root cannot address a merged corpus."""
+    from cxr.gates.g3_source_probe import resolve_paths
+
+    frame = pd.DataFrame(
+        {"source": ["alpha", "beta"], "path": ["a/1.png", "b/2.png"]}
+    )
+    resolved = resolve_paths(frame, {"alpha": tmp_path / "A", "beta": tmp_path / "B"})
+    assert resolved[0] == tmp_path / "A" / "a/1.png"
+    assert resolved[1] == tmp_path / "B" / "b/2.png"
+
+
+def test_g3_rejects_a_mapping_missing_a_source(tmp_path):
+    """Silently scoring a subset would understate the confound."""
+    from cxr.gates.g3_source_probe import resolve_paths
+
+    frame = pd.DataFrame({"source": ["alpha", "beta"], "path": ["1.png", "2.png"]})
+    with pytest.raises(ValueError, match="no image root given for sources"):
+        resolve_paths(frame, {"alpha": tmp_path})
+
+
+def test_g3_still_accepts_a_single_root(clean_corpus):
+    root, frame = clean_corpus
+    assert source_confound_probe(frame, image_root=root).status is GateStatus.PASS

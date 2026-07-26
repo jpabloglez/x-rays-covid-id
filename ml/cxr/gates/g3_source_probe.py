@@ -50,10 +50,32 @@ def thumbnail_features(paths: list[Path], side: int = THUMBNAIL_SIDE) -> np.ndar
     return np.vstack(rows) if rows else np.empty((0, side * side), dtype=np.float32)
 
 
+def resolve_paths(frame: pd.DataFrame, image_root: Path | dict[str, Path]) -> list[Path]:
+    """Turn manifest paths into absolute ones.
+
+    Sources are downloaded independently and rarely share a parent, so a single
+    root cannot address a merged corpus. Passing a mapping keeps each source
+    resolvable without copying tens of gigabytes into a common tree.
+    """
+    if not isinstance(image_root, dict):
+        return [Path(image_root) / path for path in frame["path"]]
+
+    missing = sorted(set(frame["source"].astype(str)) - set(image_root))
+    if missing:
+        raise ValueError(
+            f"no image root given for sources {missing}; G3 needs every source "
+            f"resolvable or the probe would silently score a subset"
+        )
+    return [
+        Path(image_root[str(source)]) / path
+        for source, path in zip(frame["source"], frame["path"], strict=True)
+    ]
+
+
 def source_confound_probe(
     frame: pd.DataFrame,
     *,
-    image_root: Path | None = None,
+    image_root: Path | dict[str, Path] | None = None,
     features: np.ndarray | None = None,
     threshold: float = DEFAULT_THRESHOLD,
     n_splits: int = 3,
@@ -78,7 +100,7 @@ def source_confound_probe(
     if features is None:
         if image_root is None:
             raise ValueError("pass either `features` or `image_root`")
-        features = feature_fn([image_root / path for path in frame["path"]])
+        features = feature_fn(resolve_paths(frame, image_root))
 
     if len(features) != len(frame):
         raise ValueError(f"features has {len(features)} rows, manifest has {len(frame)}")

@@ -48,7 +48,14 @@ def main(argv: list[str] | None = None) -> int:
 
     gates = subparsers.add_parser("gates", help="run the leakage gates")
     gates.add_argument("input", type=Path, help="a manifest carrying a split column")
-    gates.add_argument("--images", type=Path, default=None, help="image root, enables G3")
+    gates.add_argument(
+        "--images",
+        action="append",
+        default=None,
+        metavar="SOURCE=PATH",
+        help="image root for one source, repeatable; enables G3. A bare path is "
+        "accepted when the corpus has a single source.",
+    )
     gates.add_argument("--json", type=Path, default=None, help="write results for the model card")
     gates.add_argument("--duplicate-threshold", type=int, default=DEFAULT_THRESHOLD_BITS)
     gates.add_argument("--source-probe-threshold", type=float, default=0.75)
@@ -123,6 +130,20 @@ def _split(args: argparse.Namespace) -> int:
     return 0
 
 
+def _image_roots(values: list[str] | None) -> Path | dict[str, Path] | None:
+    if not values:
+        return None
+    if len(values) == 1 and "=" not in values[0]:
+        return Path(values[0])
+    roots: dict[str, Path] = {}
+    for value in values:
+        source, _, path = value.partition("=")
+        if not path:
+            raise SystemExit(f"--images expects SOURCE=PATH, got {value!r}")
+        roots[source] = Path(path)
+    return roots
+
+
 def _gates(args: argparse.Namespace) -> int:
     frame = pd.read_parquet(args.input)
     if "split" not in frame.columns:
@@ -134,7 +155,7 @@ def _gates(args: argparse.Namespace) -> int:
     results = run_all(
         frame,
         assigned,
-        image_root=args.images,
+        image_root=_image_roots(args.images),
         duplicate_threshold=args.duplicate_threshold,
         source_probe_threshold=args.source_probe_threshold,
         cramers_v_threshold=args.cramers_v_threshold,
