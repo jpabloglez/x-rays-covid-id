@@ -7,6 +7,20 @@ costs the model nothing to exploit.
 
 Deliberately weak by design: logistic regression on downsampled pixels has no
 capacity to learn pathology. Whatever it finds is acquisition, not disease.
+
+Two things follow from that weakness, and both matter when reading the number.
+
+A pass is a lower bound, not a clearance. The probe sees 32x32 thumbnails after
+per-image normalisation, which strips the global brightness that carries much
+of a scanner's signature. A CNN at full resolution has more to work with, so
+"not trivially separable" is the strongest claim a pass supports.
+
+And the number is only meaningful once G2 is clean. Duplicated images appear in
+the corpus under two different source labels while being pixel-identical, so
+the probe cannot beat chance on them however distinct the sources really are.
+On the first real corpus, 59% of images were such twins, capping balanced
+accuracy near 0.70 by arithmetic alone; the measured 0.60 was close to that
+ceiling rather than close to chance. Deduplicate first, then read G3.
 """
 
 from __future__ import annotations

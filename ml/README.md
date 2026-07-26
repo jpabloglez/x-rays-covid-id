@@ -55,7 +55,8 @@ cxr sources                       # what is available and what it lacks
 cxr assemble --source chestxray14 --root data/raw/nih --out data/manifests/nih.parquet
 cxr assemble --source covid_radiography --root data/raw/covid --out data/manifests/covid.parquet
 cxr merge data/manifests/*.parquet --out data/manifests/corpus.parquet
-cxr split data/manifests/corpus.parquet --out data/manifests/split.parquet --holdout-source covid_radiography
+cxr dedupe data/manifests/corpus.parquet --out data/manifests/corpus-dedup.parquet --drop
+cxr split data/manifests/corpus-dedup.parquet --out data/manifests/split.parquet --holdout-source covid_radiography
 cxr gates data/manifests/split.parquet --images data/raw --json reports/gates.json
 ```
 
@@ -85,7 +86,23 @@ corrupt the AP/PA stratification that the bias analysis depends on.
 radiographs share their gross anatomy, so their hashes sit closer together than
 natural images and a threshold tuned on photographs will merge unrelated
 patients. Cluster at several thresholds; if a cluster contains two different
-`patient_id`s that are not a known duplicate pair, it is too loose.
+`patient_id`s that are not a known duplicate pair, it is too loose. On the
+first real corpus a 64-bit hash was unusable — the nearest *distinct* pair sat
+one bit away — and widening to 256 bits gave a clean 23-bit gap.
+
+**The collections overlap far more than their documentation suggests.** 8,850
+of the RSNA Pneumonia Challenge's 8,851 normal studies have a twin in the
+COVID-19 Radiography Database's normal class: the latter took its normal class
+from the former. Pooling the two without deduplicating puts 59% of the corpus
+on both sides of a split. `cxr dedupe --drop` keeps the RSNA DICOM, which is
+both the higher-fidelity original and the choice that leaves the non-COVID
+classes mixed across sources rather than aligned with them.
+
+**Duplication also suppresses G3.** A source probe cannot beat chance on two
+pixel-identical images labelled with different sources, so a corpus that is 59%
+twins caps the probe near 0.70 whatever the acquisition differences are. Read
+G3 only after G2 is clean; before that, a low reading measures duplication, not
+the absence of a confound.
 
 **G4 skips splits too small to score.** Below an expected cell count of five
 the chi-square approximation breaks down, and a small calibration slice would
