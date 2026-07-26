@@ -63,6 +63,21 @@ cxr gates data/manifests/split.parquet --images data/raw --json reports/gates.js
 `cxr gates` exits non-zero when a gate fails. It is meant to sit in CI between
 assembling data and training on it.
 
+**Leakage and confounds are handled differently.** G1, G1b and G2 are defects
+and always block: an image on both sides of a split makes every number measured
+afterwards meaningless. G3 and G4 are findings, and Track 1 trains on a
+confounded corpus deliberately, so they can be waived by name:
+
+```sh
+cxr gates data/manifests/split.parquet --images ... --acknowledge G3,G4
+```
+
+Naming a gate that then passes is an error rather than a no-op, so the list
+cannot go stale and quietly disarm a live check. What was acknowledged is
+written into `gates.json` for the model card, because reporting a confounded
+corpus without recording that the confound was known in advance describes
+different work.
+
 ## Design decisions worth knowing
 
 **Patient ids are namespaced by source.** Patient `1` in RSNA and patient `1`
