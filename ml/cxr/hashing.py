@@ -15,17 +15,21 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-PHASH_BITS = 64
-_DHASH_SIDE = 8
+PHASH_BITS = 256
+_DHASH_SIDE = 16
 
-# Chest radiographs share their gross anatomy, so their hashes sit closer
-# together than natural images do and a threshold tuned on photographs will
-# merge unrelated patients into one cluster. Calibrate on the real corpus
-# before trusting it: cluster at several thresholds, and if a cluster ever
-# contains two different patient_ids that are not a known duplicate pair, the
-# threshold is too loose. Erring loose is the safer direction — an
-# over-merged cluster costs training rows, an under-merged one leaks.
-DEFAULT_THRESHOLD_BITS = 6
+# Calibrated on the real 30k corpus rather than guessed.
+#
+# At 64 bits this hash was unusable here. Chest radiographs share their gross
+# anatomy, and a 64-bit signature could not separate them: 9,026 of 30,016
+# images collided exactly while only 54 were byte-identical, and the nearest
+# *distinct* pair sat 1 bit apart, so any threshold at all chained the corpus
+# into a single cluster covering 94% of it.
+#
+# At 256 bits the distribution is cleanly bimodal: true duplicates at distance
+# 0, and the nearest distinct pair 23 bits away. A threshold in the middle of
+# that gap separates them with margin to spare.
+DEFAULT_THRESHOLD_BITS = 10
 
 
 def sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
@@ -38,7 +42,7 @@ def sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
 
 
 def dhash(image: Image.Image) -> str:
-    """Difference hash: 64 bits of horizontal-gradient sign, as 16 hex chars.
+    """Difference hash: 256 bits of horizontal-gradient sign, as 64 hex chars.
 
     Chosen over average hash because it survives the global brightness and
     contrast changes that re-encoding introduces, and over pHash because it
@@ -50,7 +54,7 @@ def dhash(image: Image.Image) -> str:
     value = 0
     for bit in bits.flatten():
         value = (value << 1) | int(bit)
-    return f"{value:016x}"
+    return f"{value:0{PHASH_BITS // 4}x}"
 
 
 def dhash_file(path: Path) -> str:

@@ -55,12 +55,71 @@ cxr sources                       # what is available and what it lacks
 cxr assemble --source chestxray14 --root data/raw/nih --out data/manifests/nih.parquet
 cxr assemble --source covid_radiography --root data/raw/covid --out data/manifests/covid.parquet
 cxr merge data/manifests/*.parquet --out data/manifests/corpus.parquet
-cxr split data/manifests/corpus.parquet --out data/manifests/split.parquet --holdout-source covid_radiography
+cxr dedupe data/manifests/corpus.parquet --out data/manifests/corpus-dedup.parquet --drop
+cxr split data/manifests/corpus-dedup.parquet --out data/manifests/split.parquet --holdout-source covid_radiography
 cxr gates data/manifests/split.parquet --images data/raw --json reports/gates.json
 ```
 
 `cxr gates` exits non-zero when a gate fails. It is meant to sit in CI between
 assembling data and training on it.
+
+**Leakage and confounds are handled differently.** G1, G1b and G2 are defects
+and always block: an image on both sides of a split makes every number measured
+afterwards meaningless. G3 and G4 are findings, and Track 1 trains on a
+confounded corpus deliberately, so they can be waived by name:
+
+```sh
+cxr gates data/manifests/split.parquet --images ... --acknowledge G3,G4
+```
+
+Naming a gate that then passes is an error rather than a no-op, so the list
+cannot go stale and quietly disarm a live check. What was acknowledged is
+written into `gates.json` for the model card, because reporting a confounded
+corpus without recording that the confound was known in advance describes
+different work.
+
+## Training
+
+```sh
+cxr cache data/manifests/split.parquet --out data/cache/track1-320 \
+    --images covid_radiography=... --images rsna_pneumonia=... --target-size 320
+cxr train data/manifests/split.parquet --out models/track1 \
+    --cache data/cache/track1-320 --gates reports/gates.json
+```
+
+`train` reads the gate report and refuses a split with blocking failures, so
+the two are meant to run in that order. Acknowledged confounds are carried into
+the checkpoint and printed above every score.
+
+**Install torch for your GPU before the extras.** Which CUDA build you get
+matters more than which release. A wheel compiled for newer architectures than
+your card installs cleanly, reports `torch.cuda.is_available()` as `True`, and
+then fails at the first kernel launch with `no kernel image is available for
+execution on the device`. That happened here: `timm` and `monai` pulled
+`torch 2.13+cu130` as a transitive dependency onto a GTX 1050, whose `sm_61` is
+below that build's `sm_75` floor. `cu126` works, because it ships `sm_60` and
+CUDA cubins are forward-compatible across minor revisions.
+
+```sh
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+```
+
+`resolve_device()` probes with a real matmul rather than trusting the
+availability flag, so a mismatch falls back to CPU with the card, the build's
+arch list and the fix printed — instead of crashing after the model is built.
+
+**Preprocessing is cached, augmentation is not.** Decoding 14,863 DICOMs
+through the VOI LUT every epoch would make data loading, not the GPU, decide
+how long a run takes. Caching the augmentation too would mean every epoch saw
+the same "random" transform, which is the same as not augmenting.
+
+**The cache is uint8, and that was measured rather than assumed.** It is a
+train/serve difference, which is what retired the two-executor design — so the
+round trip was measured on 80 real radiographs: 0.00875 in normalised units,
+exactly the round-to-nearest bound. The augmentation the model is trained to
+tolerate is ten times larger; the resize divergence that killed the
+two-executor design was 229 times larger and exceeded the normalisation scale.
+`test_cache.py` pins the bound.
 
 ## Design decisions worth knowing
 
@@ -85,7 +144,23 @@ corrupt the AP/PA stratification that the bias analysis depends on.
 radiographs share their gross anatomy, so their hashes sit closer together than
 natural images and a threshold tuned on photographs will merge unrelated
 patients. Cluster at several thresholds; if a cluster contains two different
-`patient_id`s that are not a known duplicate pair, it is too loose.
+`patient_id`s that are not a known duplicate pair, it is too loose. On the
+first real corpus a 64-bit hash was unusable — the nearest *distinct* pair sat
+one bit away — and widening to 256 bits gave a clean 23-bit gap.
+
+**The collections overlap far more than their documentation suggests.** 8,850
+of the RSNA Pneumonia Challenge's 8,851 normal studies have a twin in the
+COVID-19 Radiography Database's normal class: the latter took its normal class
+from the former. Pooling the two without deduplicating puts 59% of the corpus
+on both sides of a split. `cxr dedupe --drop` keeps the RSNA DICOM, which is
+both the higher-fidelity original and the choice that leaves the non-COVID
+classes mixed across sources rather than aligned with them.
+
+**Duplication also suppresses G3.** A source probe cannot beat chance on two
+pixel-identical images labelled with different sources, so a corpus that is 59%
+twins caps the probe near 0.70 whatever the acquisition differences are. Read
+G3 only after G2 is clean; before that, a low reading measures duplication, not
+the absence of a confound.
 
 **G4 skips splits too small to score.** Below an expected cell count of five
 the chi-square approximation breaks down, and a small calibration slice would

@@ -113,9 +113,25 @@ def test_the_briefs_configuration_fails_the_gates(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "Do not train on this split" in output
 
-    payload = {entry["gate"]: entry for entry in json.loads(report.read_text())}
+    payload = {entry["gate"]: entry for entry in json.loads(report.read_text())["gates"]}
     assert payload["G4"]["status"] == "fail"
     assert "covid" in payload["G4"]["details"]["classes_from_a_single_source"]
+
+    # Track 1 trains on exactly this corpus on purpose, so the failure can be
+    # acknowledged by name -- and the acknowledgement is recorded, not just
+    # obeyed, because the model card has to say the confound was known.
+    assert main(["gates", str(split), "--json", str(report), "--acknowledge", "G4"]) == 0
+    assert "acknowledged as known confounds" in capsys.readouterr().out
+
+    payload = json.loads(report.read_text())
+    assert payload["acknowledged"] == ["G4"]
+    assert payload["training_permitted"] is True
+
+    # G2 passes here, so naming it is a stale acknowledgement -- an error in
+    # its own right, because otherwise a fixed corpus keeps a live leakage
+    # check disarmed by a line nobody revisits.
+    assert main(["gates", str(split), "--acknowledge", "G2"]) == 1
+    assert "G2 is acknowledged" in capsys.readouterr().out
 
 
 def test_split_reports_a_summary(tmp_path, capsys):

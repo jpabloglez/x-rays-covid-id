@@ -14,7 +14,25 @@ dependencies = [
 [project.optional-dependencies]
 # Kept out of the base install so CI and the gates stay fast. Needed only once
 # real DICOM sources are being ingested or a model is being trained.
+#
+# torch is deliberately unbounded above only because the CUDA variant, not the
+# version, is what decides whether it runs. Which build you install matters more
+# than which release: a wheel compiled for newer architectures than your card
+# installs cleanly, reports torch.cuda.is_available() as True, and then fails at
+# the first kernel launch. On the GTX 1050 (sm_61) used here, the default cu130
+# wheels do exactly that -- their arch list starts at sm_75 -- while the cu126
+# wheels ship sm_60, which runs on 6.1 by CUDA's minor-version compatibility.
+#
+# So install torch from the index matching your GPU before installing this
+# extra, or a transitive resolve will pick the default build for you:
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+#
+# cxr.train.resolve_device() probes for this at runtime rather than trusting the
+# availability flag, so a mismatch degrades to CPU with an explanation instead
+# of crashing mid-run.
 imaging = ["pydicom>=2.4", "monai>=1.3", "torch>=2.2"]
+train = ["timm>=1.0"]
 
 [project.scripts]
 cxr = "cxr.cli:main"

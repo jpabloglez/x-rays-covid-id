@@ -286,14 +286,61 @@ def test_results_serialise_for_the_model_card(clean_corpus, tmp_path):
     import json
 
     payload = json.loads(path.read_text())
-    assert {entry["gate"] for entry in payload} == {"G1", "G1b", "G2", "G3", "G4"}
-    probe = next(entry for entry in payload if entry["gate"] == "G3")
+    assert {entry["gate"] for entry in payload["gates"]} == {"G1", "G1b", "G2", "G3", "G4"}
+    probe = next(entry for entry in payload["gates"] if entry["gate"] == "G3")
     assert probe["measured"] is not None
+    assert payload["training_permitted"] is True
 
 
 def test_render_names_the_failures(confounded_corpus):
     root, frame = confounded_corpus
     assigned = splits.assign(frame, SplitConfig(n_folds=4, calibration_folds=4))
     text = render(run_all(frame, assigned, image_root=root))
-    assert "gates failed" in text
+    assert "block training" in text
     assert "Do not train" in text
+
+
+# --------------------------------------------------------------------------
+# Per-source image roots
+# --------------------------------------------------------------------------
+
+
+def test_g3_resolves_each_source_against_its_own_root(tmp_path):
+    """Sources are downloaded independently and rarely share a parent, so a
+    single root cannot address a merged corpus."""
+    from cxr.gates.g3_source_probe import resolve_paths
+
+    frame = pd.DataFrame(
+        {"source": ["alpha", "beta"], "path": ["a/1.png", "b/2.png"]}
+    )
+    resolved = resolve_paths(frame, {"alpha": tmp_path / "A", "beta": tmp_path / "B"})
+    assert resolved[0] == tmp_path / "A" / "a/1.png"
+    assert resolved[1] == tmp_path / "B" / "b/2.png"
+
+
+def test_g3_rejects_a_mapping_missing_a_source(tmp_path):
+    """Silently scoring a subset would understate the confound."""
+    from cxr.gates.g3_source_probe import resolve_paths
+
+    frame = pd.DataFrame({"source": ["alpha", "beta"], "path": ["1.png", "2.png"]})
+    with pytest.raises(ValueError, match="no image root given for sources"):
+        resolve_paths(frame, {"alpha": tmp_path})
+
+
+def test_g3_still_accepts_a_single_root(clean_corpus):
+    root, frame = clean_corpus
+    assert source_confound_probe(frame, image_root=root).status is GateStatus.PASS
+
+
+def test_g3_thumbnails_can_read_dicom(tmp_path):
+    """Half the real corpus is DICOM, which Pillow cannot open. A probe that
+    crashes on one source cannot measure the confound between two."""
+    pytest.importorskip("pydicom")
+    import numpy as np
+    from cxr.gates.g3_source_probe import thumbnail_features
+    from tests.test_preprocessing import _write_dicom
+
+    path = _write_dicom(
+        tmp_path / "s.dcm", (np.random.default_rng(0).random((32, 32)) * 3000).astype("uint16")
+    )
+    assert thumbnail_features([path]).shape == (1, 32 * 32)
