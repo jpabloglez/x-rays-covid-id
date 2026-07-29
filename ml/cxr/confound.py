@@ -46,6 +46,13 @@ class Ablation:
     images: int
     baseline: Evaluation
     ablated: Evaluation
+    # What was taken away, and which direction is the good news. These are not
+    # cosmetic: retention means the opposite thing depending on whether the
+    # lungs were the part removed or the part kept, and a single hardcoded
+    # verdict silently reports one experiment's conclusion for the other.
+    removed: str = "the lung fields"
+    remaining: str = "everything outside the lungs"
+    retention_is_shortcut: bool = True
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -83,29 +90,51 @@ class Ablation:
 
 
 def interpret(ablation: Ablation) -> str:
-    """State plainly what the retention means, so a reader cannot skip it."""
+    """State plainly what the retention means, so a reader cannot skip it.
+
+    Which direction is bad depends on what was removed. With the lungs removed,
+    surviving signal is signal found outside the anatomy -- a shortcut. With
+    only the lungs kept, surviving signal is signal found inside the anatomy,
+    which is what a credible model should have.
+    """
     retention = ablation.retention
     if np.isnan(retention):
         return "The baseline is at chance on these rows; the ablation says nothing."
+
+    share = f"{retention:.1%}"
+    if not ablation.retention_is_shortcut:
+        if retention >= 0.8:
+            return (
+                f"{share} of the signal is still available from {ablation.remaining} alone, so the "
+                "anatomy does carry most of what the model could use. Read together with the "
+                "complementary ablation: if that one also retains its signal, the information is "
+                "duplicated inside and outside the lungs and this number proves nothing on its own."
+            )
+        return (
+            f"only {share} of the signal survives when nothing but {ablation.remaining} is left. "
+            "The model cannot do the job from the anatomy alone, which means most of what it "
+            "uses lies outside it."
+        )
+
     if retention >= 0.8:
         return (
-            f"{retention:.0%} of the signal survives with the lungs blanked out. The model is "
-            "almost entirely reading something other than the anatomy -- this score does not "
-            "transfer to any other hospital, and should not be reported as a diagnostic result."
+            f"{share} of the signal survives with {ablation.removed} removed entirely. The model "
+            "is almost entirely reading something other than the anatomy -- this score does not "
+            "transfer to any other hospital, and must not be reported as a diagnostic result."
         )
     if retention >= 0.5:
         return (
-            f"{retention:.0%} of the signal survives without the lungs. A majority of what the "
-            "model uses is outside the region the disease is in."
+            f"{share} of the signal survives with {ablation.removed} removed. A majority of what "
+            "the model uses is outside the region the disease is in."
         )
     if retention >= 0.2:
         return (
-            f"{retention:.0%} survives without the lungs. Real anatomical signal is present, but "
-            "a substantial shortcut remains and the headline number is inflated by it."
+            f"{share} survives with {ablation.removed} removed. Real anatomical signal is present, "
+            "but a substantial shortcut remains and the headline number is inflated by it."
         )
     return (
-        f"only {retention:.0%} survives without the lungs, so the model is mostly reading the "
-        "lung fields. That is necessary for a credible result, not sufficient -- it does not "
+        f"only {share} survives with {ablation.removed} removed, so the model is mostly reading "
+        "the lung fields. That is necessary for a credible result, not sufficient -- it does not "
         "rule out a within-lung confound such as disease severity tracking view position."
     )
 
