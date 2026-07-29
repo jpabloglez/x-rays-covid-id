@@ -28,14 +28,24 @@ def _png(path, seed=0):
 # --------------------------------------------------------------------------
 
 
-def test_only_one_registered_source_can_supply_covid():
+def test_the_pre_pandemic_sources_cannot_supply_covid():
     """The structural finding, asserted so it cannot be forgotten.
 
-    ChestX-ray14 and RSNA predate the pandemic. If this test ever fails
-    because a second COVID-capable source was added, that is good news and the
-    confound analysis should be revisited.
+    ChestX-ray14 (2017) and RSNA (2018) predate the pandemic, so a corpus built
+    from them plus one pandemic-era collection has COVID drawn from exactly one
+    source and G4 fails by construction. That was the whole argument for Track
+    2, and it still holds for every source that predates 2020.
+
+    This assertion used to read `== ["covid_radiography"]`. Adding BIMCV is
+    precisely what changes it: a second collection that can supply COVID is the
+    thing that makes a non-confounded comparison possible at all.
     """
-    assert sources.covid_capable() == ["covid_radiography"]
+    from cxr import sources
+
+    capable = set(sources.covid_capable())
+    assert capable == {"covid_radiography", "bimcv_covid19"}
+    assert not capable & {"chestxray14", "rsna_pneumonia"}
+
 
 
 def test_unknown_source_is_rejected():

@@ -31,9 +31,22 @@ def test_sources_lists_adapters(capsys):
     assert "chestxray14" in output
 
 
-def test_sources_warns_that_only_one_source_has_covid(capsys):
-    main(["sources"])
-    assert "Only ['covid_radiography']" in capsys.readouterr().out
+def test_sources_lists_what_each_collection_can_and_cannot_supply(capsys):
+    """The warning fires only while a single collection can supply COVID.
+
+    With BIMCV registered that is no longer the case, so the absence of the
+    warning is the assertion: it is driven by the registry rather than being a
+    fixed line of text.
+    """
+    assert main(["sources"]) == 0
+    output = capsys.readouterr().out
+
+    assert "bimcv_covid19" in output
+    assert "rsna_pneumonia" in output
+    assert "covid label: NO" in output      # the pre-pandemic collections
+    assert "covid label: yes" in output     # BIMCV and COVID-19 Radiography
+    assert "Only [" not in output
+
 
 
 def test_assemble_writes_a_manifest(tmp_path, capsys):
