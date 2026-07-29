@@ -118,7 +118,11 @@ for entry in "${AVAILABLE[@]:0:$PARTS}"; do
     # this share has been observed to stall mid-transfer with the socket open
     # and no bytes moving, which a plain curl would wait on indefinitely.
     echo "  downloading..."
-    curl -fSL --max-time 7200 --connect-timeout 60 \
+    # --no-progress-meter, not --silent: errors and retry notices still need to
+    # reach the log. The meter itself emits a line per second, which across
+    # sixteen archives buries every message worth reading under megabytes of
+    # carriage returns.
+    curl -fSL --no-progress-meter --max-time 7200 --connect-timeout 60 \
          --retry 10 --retry-delay 15 --retry-all-errors \
          --speed-limit 1024 --speed-time 120 \
          --continue-at - -u "$TOKEN:" \
