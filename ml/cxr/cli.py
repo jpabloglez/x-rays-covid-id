@@ -115,6 +115,19 @@ def main(argv: list[str] | None = None) -> int:
     train_parser.add_argument("--no-amp", action="store_true")
     train_parser.add_argument("--no-pretrained", action="store_true")
 
+    ablate_parser = subparsers.add_parser(
+        "ablate", help="score a checkpoint with the lung fields removed, and kept"
+    )
+    ablate_parser.add_argument("input", type=Path, help="a split manifest")
+    ablate_parser.add_argument("--checkpoint", required=True, type=Path)
+    ablate_parser.add_argument("--masks", action="append", metavar="SOURCE=PATH", required=True)
+    ablate_parser.add_argument("--cache", type=Path, default=None)
+    ablate_parser.add_argument("--images", action="append", metavar="SOURCE=PATH", default=None)
+    ablate_parser.add_argument("--split", default="test")
+    ablate_parser.add_argument("--batch-size", type=int, default=8)
+    ablate_parser.add_argument("--workers", type=int, default=2)
+    ablate_parser.add_argument("--json", type=Path, default=None)
+
     args = parser.parse_args(argv)
     return {
         "sources": _sources,
@@ -125,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         "gates": _gates,
         "cache": _cache,
         "train": _train,
+        "ablate": _ablate,
     }[args.command](args)
 
 
@@ -276,6 +290,36 @@ def _train(args: argparse.Namespace) -> int:
     )
     print("\n" + report(checkpoint))
     print(f"\nCheckpoint written to {args.out}")
+    return 0
+
+
+def _ablate(args: argparse.Namespace) -> int:
+    from cxr import ablate as ablation
+    from cxr import cache as image_cache
+    from cxr.confound import interpret, write_report
+
+    frame = pd.read_parquet(args.input)
+    loaded = image_cache.load(args.cache) if args.cache else None
+    roots = _image_roots(args.images)
+    if roots is not None and not isinstance(roots, dict):
+        roots = {source: Path(roots) for source in set(frame["source"])}
+
+    results = ablation.run(
+        args.checkpoint,
+        frame,
+        split=args.split,
+        mask_roots=_image_roots(args.masks),
+        cache=loaded,
+        image_roots=roots,
+        batch_size=args.batch_size,
+        workers=args.workers,
+    )
+    for result in results:
+        print(result.render())
+        print(f"\n  {interpret(result)}\n")
+    if args.json:
+        write_report(results, args.json)
+        print(f"Written to {args.json}")
     return 0
 
 

@@ -72,8 +72,47 @@ def test_a_chance_baseline_makes_the_ablation_meaningless():
 
 
 def test_interpretation_escalates_with_retention():
-    assert "should not be reported as a diagnostic result" in interpret(_ablation(1.0, 1.0))
+    assert "must not be reported as a diagnostic result" in interpret(_ablation(1.0, 1.0))
     assert "mostly reading the lung fields" in interpret(_ablation(1.0, 0.0))
+
+
+def test_retention_means_the_opposite_when_the_lungs_are_what_was_kept():
+    """The reporting bug this guards against: the same 99% retention is damning
+    for `lungs removed` and reassuring for `lungs only`, and a single hardcoded
+    verdict reports one experiment's conclusion under the other's name."""
+    shortcut = _ablation(1.0, 1.0)
+    kept = Ablation(
+        name="Lungs only", images=shortcut.images,
+        baseline=shortcut.baseline, ablated=shortcut.ablated,
+        removed="everything outside the lungs", retention_is_shortcut=False,
+    )
+    assert "must not be reported" in interpret(shortcut)
+    assert "must not be reported" not in interpret(kept)
+    assert "anatomy does carry most" in interpret(kept)
+
+
+def test_a_low_retention_with_only_the_lungs_kept_is_the_bad_news():
+    poor = _ablation(1.0, 0.0)
+    kept = Ablation(
+        name="Lungs only", images=poor.images, baseline=poor.baseline, ablated=poor.ablated,
+        removed="everything outside the lungs", retention_is_shortcut=False,
+    )
+    assert "cannot do the job from the anatomy alone" in interpret(kept)
+
+
+def test_the_wording_names_what_remains_not_what_was_removed():
+    """Retention describes the signal left behind, so the sentence must name
+    what survived the ablation. Naming the removed region instead inverts the
+    claim while reading perfectly fluently -- which is how it shipped twice."""
+    base = _ablation(1.0, 1.0)
+    kept = Ablation(
+        name="Lungs only", images=10, baseline=base.baseline, ablated=base.ablated,
+        removed="everything outside the lungs", remaining="the lung fields",
+        retention_is_shortcut=False,
+    )
+    text = interpret(kept)
+    assert "available from the lung fields alone" in text
+    assert "everything outside the lungs" not in text
 
 
 def test_a_good_result_is_still_not_called_sufficient():
