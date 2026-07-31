@@ -43,11 +43,17 @@ def corpus(tmp_path):
         # The trap: a lateral with no vp- marker, identifiable only from the
         # Spanish series description.
         _image(root, partition, subject, session, f"{stem}_cr.png")
+        # The two partitions write the `filename` column differently: the
+        # positives prefix it with the modality directory, the negatives do
+        # not. Both forms appear here because a fixture that used only one of
+        # them let a join failure ship -- the adapter matched every negative
+        # and no positive, and nothing failed loudly enough to notice.
+        key = f"mod-rx/{stem}" if partition == "covid19_posi" else stem
         _scans(root, partition, subject, session, [
-            [f"{stem}_vp-pa_cr.png", "F", "064Y", "W033 Torax PA", "SIEMENS"],
-            [f"{stem}_vp-ap_dx.png", "F", "064Y", "W031 Torax AP", "SIEMENS"],
-            [f"{stem}_vp-ll_cr.png", "F", "064Y", "W034 Torax Lat.", "SIEMENS"],
-            [f"{stem}_cr.png", "F", "064Y", "W034 Torax Lat.", "SIEMENS"],
+            [f"{key}_vp-pa_cr.png", "F", "064Y", "W033 Torax PA", "SIEMENS"],
+            [f"{key}_vp-ap_dx.png", "F", "064Y", "W031 Torax AP", "SIEMENS"],
+            [f"{key}_vp-ll_cr.png", "F", "064Y", "W034 Torax Lat.", "SIEMENS"],
+            [f"{key}_cr.png", "F", "064Y", "W034 Torax Lat.", "SIEMENS"],
         ])
     return root
 
@@ -84,9 +90,19 @@ def test_the_label_is_molecular_status_not_the_series_description(corpus):
 
 
 def test_demographics_come_from_the_session_metadata(corpus):
-    record = next(iter(get("bimcv_covid19").build(corpus)))
-    assert record["age"] == 64.0
-    assert record["sex"] == "F"
+    """Every record, not the first one, and both partitions.
+
+    Checking one record hid a join that worked for the negatives and failed for
+    the positives. That failure mode is worse than missing demographics: it
+    makes "sex is known" a perfect predictor of the label, so anything
+    downstream that touches demographics leaks the answer.
+    """
+    records = get("bimcv_covid19").build(corpus)
+    by_label = {record["label"] for record in records}
+    assert by_label == {"covid", "non_covid"}
+    for record in records:
+        assert record["age"] == 64.0, record["image_id"]
+        assert record["sex"] == "F", record["image_id"]
 
 
 def test_patient_ids_are_namespaced_and_sessions_kept(corpus):

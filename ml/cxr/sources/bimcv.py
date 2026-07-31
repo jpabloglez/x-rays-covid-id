@@ -167,7 +167,15 @@ def _scan_metadata(partition_root: Path) -> dict[str, dict]:
                 for row in csv.DictReader(handle, delimiter="\t"):
                     filename = (row.get("filename") or "").strip()
                     if filename:
-                        metadata[filename] = row
+                        # Keyed by basename because the two partitions disagree
+                        # about the form: the negatives write a bare filename,
+                        # the positives prefix it with `mod-rx/`. Keying on the
+                        # raw field matched every negative and no positive,
+                        # which cost the positives their demographics and, worse,
+                        # silently skipped the lateral check on all of them --
+                        # a filter that cannot fail looks exactly like a filter
+                        # with nothing to catch.
+                        metadata[Path(filename).name] = row
         except OSError:
             # A missing or unreadable session file costs metadata, not the
             # image; the row is still usable with unknown demographics.
