@@ -44,6 +44,11 @@ class TrainConfig:
     weight_decay: float = 1e-4
     warmup_epochs: int = 1
     patience: int = 5
+    # How much better an epoch has to be before it counts as progress. Without
+    # this, patience resets on any gain at all, and a converged run keeps going
+    # on +0.0002 an epoch -- which cost the Track 1 run about two hours of
+    # fourth-decimal-place noise. Set to 0.0 to restore the old behaviour.
+    min_delta: float = 1e-3
     workers: int = 2
     amp: bool = True
     seed: int = 0
@@ -182,6 +187,11 @@ def train(
     scaler = torch.amp.GradScaler(device.type, enabled=config.amp and device.type == "cuda")
 
     best_auc, best_state, best_epoch, history = -np.inf, None, -1, []
+    # Tracked separately from the best score on purpose. "Which weights should
+    # I keep" and "is this run still going anywhere" are different questions,
+    # and answering both with one variable is what makes a converged run crawl:
+    # every trivial gain both checkpoints and buys another `patience` epochs.
+    progress_auc, progress_epoch = -np.inf, -1
 
     for epoch in range(config.epochs):
         # The head starts random against a pretrained trunk, so its first
@@ -249,11 +259,22 @@ def train(
         # readable record of what it had reached.
         (output / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
 
-        # An independent check rather than the else-branch of the improvement
-        # test: an epoch that improves resets best_epoch, so the difference is
+        # Note this is a lower bar than the checkpoint above: an epoch can be
+        # worth keeping without being worth continuing for. The best weights are
+        # still whatever scored highest, including a marginal winner found while
+        # the run was already on the plateau.
+        if not frozen and scored.macro_auc > progress_auc + config.min_delta:
+            progress_auc, progress_epoch = scored.macro_auc, epoch
+
+        # An independent check rather than the else-branch of the progress test:
+        # an epoch that progresses resets progress_epoch, so the difference is
         # zero and this cannot fire on the same pass anyway.
-        if best_epoch >= 0 and epoch - best_epoch >= config.patience:
-            print(f"no improvement in {config.patience} epochs; stopping at {epoch}", flush=True)
+        if progress_epoch >= 0 and epoch - progress_epoch >= config.patience:
+            print(
+                f"no gain above {config.min_delta:g} in {config.patience} epochs; "
+                f"stopping at {epoch}. Best {best_auc:.4f} at epoch {best_epoch}.",
+                flush=True,
+            )
             break
 
     if best_state is None:
