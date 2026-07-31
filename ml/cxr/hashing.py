@@ -18,6 +18,37 @@ from PIL import Image
 PHASH_BITS = 256
 _DHASH_SIDE = 16
 
+# Modes whose samples do not fit in a byte. PIL converts these to "L" by
+# clipping at 255 rather than rescaling, so a 12-bit radiograph stored in
+# `I;16` arrives as uniform white.
+_DEEP_MODES = frozenset({"I", "I;16", "I;16B", "I;16L", "I;16N", "F"})
+
+
+def _grayscale(image: Image.Image) -> Image.Image:
+    """8-bit grayscale, rescaled rather than clipped.
+
+    BIMCV ships 12-bit pixel data in 16-bit PNGs, values running to about 4095.
+    `convert("L")` clips every one of them to 255, and a uniform image has no
+    horizontal gradients at all, so its hash is 256 zero bits. Every such image
+    then sits within zero bits of every other, and 501 radiographs from 320
+    different patients collapsed into a single "duplicate" group.
+
+    Rescaling by the observed range is safe for this hash specifically: dHash
+    compares neighbouring pixels, and a monotonic rescale cannot change which
+    of two neighbours is brighter. An 8-bit image takes the original path
+    untouched, so hashes already computed for the 8-bit collections stand.
+    """
+    if image.mode not in _DEEP_MODES:
+        return image.convert("L")
+
+    pixels = np.asarray(image, dtype=np.float64)
+    low, high = float(pixels.min()), float(pixels.max())
+    if high <= low:
+        # Genuinely blank. Hashing it is pointless but must not divide by zero.
+        return Image.fromarray(np.zeros(pixels.shape, dtype=np.uint8), mode="L")
+    scaled = (pixels - low) * (255.0 / (high - low))
+    return Image.fromarray(scaled.astype(np.uint8), mode="L")
+
 # Calibrated on the real 30k corpus rather than guessed.
 #
 # At 64 bits this hash was unusable here. Chest radiographs share their gross
@@ -48,7 +79,7 @@ def dhash(image: Image.Image) -> str:
     contrast changes that re-encoding introduces, and over pHash because it
     needs no DCT and stays dependency-light enough to run in CI.
     """
-    grayscale = image.convert("L").resize((_DHASH_SIDE + 1, _DHASH_SIDE), Image.LANCZOS)
+    grayscale = _grayscale(image).resize((_DHASH_SIDE + 1, _DHASH_SIDE), Image.LANCZOS)
     pixels = np.asarray(grayscale, dtype=np.int16)
     bits = pixels[:, 1:] > pixels[:, :-1]
     value = 0
