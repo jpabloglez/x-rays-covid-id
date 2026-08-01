@@ -170,3 +170,19 @@ def test_split_reports_a_summary(tmp_path, capsys):
 def test_unknown_command_is_rejected():
     with pytest.raises(SystemExit):
         main(["nonsense"])
+
+
+def test_the_task_is_derived_from_the_labels():
+    from cxr.data import TRACK1_CLASSES, TRACK2_CLASSES, task_for
+
+    assert task_for(set(TRACK2_CLASSES)) == ("track2", TRACK2_CLASSES)
+    assert task_for(set(TRACK1_CLASSES)) == ("track1", TRACK1_CLASSES)
+
+
+def test_labels_matching_no_task_are_refused_rather_than_guessed():
+    """A corpus mixing the two tasks' labels has no defined class ordering, and
+    picking one silently is how index 0 stops meaning the same thing twice."""
+    from cxr.data import SplitError, task_for
+
+    with pytest.raises(SplitError, match="match no single task"):
+        task_for({"normal", "covid", "non_covid"})
