@@ -1,22 +1,36 @@
 # X-rays COVID / non-COVID classifier
 
-A portfolio project working towards a chest-radiograph classifier with an
-honest evaluation story. **The classifier does not exist yet.** This repository
-currently contains the web application that will host it.
+A portfolio project building a chest-radiograph classifier with an honest
+evaluation story. Two models are trained. **Neither is a diagnostic device, and
+demonstrating why is the point of the project.**
+
+Train on the pooled public collections and you get **0.9925 macro AUC** with a
+COVID AUC of exactly 1.0000. Blank out the lung fields entirely and **91.5% of
+that signal survives** — the model is reading which collection the image came
+from. Retrain within a single hospital network, where positives and negatives
+share scanners and period, and the score falls to **0.7460** with 83.7% still
+surviving the same ablation.
+
+The gap between those numbers is the deliverable.
+**[`ml/RESULTS.md`](ml/RESULTS.md) is the write-up.**
 
 ## Status
 
 | Area | State |
 | --- | --- |
 | Image upload and display | Working |
-| Classification model | **Not implemented** — no model, no training code, no dataset |
+| Dataset assembly, leakage gates | Working — five gates, measured values not pass/fail |
+| Training, calibration, lung ablation | Working — two tracks trained and ablated |
+| Inference API | **Not wired up** — models exist, the app cannot call them yet |
 | User accounts and organisations | Models only; the API was removed (see below) |
-| Test suite | Upload endpoint only |
+| Test suite | 256 tests over the ML package; upload endpoint on the app side |
 
 What the app does today: you upload a JPEG or PNG, the backend validates and
 stores it under a content-addressed name, and the frontend renders it back.
-There is no inference step. Anything in the interface that suggests otherwise
-is aspirational, and this table is the source of truth.
+**There is still no inference step in the web application** — the trained
+models live in the `ml` package and are not yet reachable from it. Anything in
+the interface that suggests otherwise is aspirational, and this table is the
+source of truth.
 
 The roadmap — data acquisition, leakage controls, the model ladder, calibration
 and abstention, attribution overlays, reporting — is tracked separately from
@@ -25,17 +39,21 @@ this file.
 ## Disclaimer
 
 This application is for demonstration purposes only and must not be used as a
-substitute for professional medical diagnosis or advice. Once a model exists,
-its outputs will carry the limitations of the public datasets it was trained on
-and will be subject to false positives and false negatives. Always consult
+substitute for professional medical diagnosis or advice. Always consult
 qualified healthcare professionals for diagnosis and treatment.
 
 Published work has repeatedly found that COVID classifiers trained on the
 available public chest X-ray collections learn dataset provenance rather than
 pathology — see DeGrave, Janizek & Lee (2021) and the systematic review by
 Roberts et al. (2021), which found none of 415 candidate models clinically
-usable. Any model this project produces will be evaluated with that failure
-mode as the primary hypothesis, not an afterthought.
+usable. That failure mode was this project's primary hypothesis rather than an
+afterthought, and **it was confirmed.** Track 1 retains 91.5% of its
+discriminative signal with the lungs removed; Track 2, trained on a
+single-source corpus specifically to escape the problem, still retains 83.7%.
+
+Neither model should be quoted as a diagnostic result. They are research
+artefacts that measure a documented failure mode, and their limitations are
+recorded in [`ml/RESULTS.md`](ml/RESULTS.md) rather than left implicit.
 
 The developers and contributors are not responsible for misuse or
 misinterpretation of any results this application produces.
