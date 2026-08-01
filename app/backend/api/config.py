@@ -24,16 +24,30 @@ def _list(name: str, default: list[str]) -> list[str]:
 
 @dataclass(frozen=True)
 class Settings:
+    """Every field reads the environment when an instance is built.
+
+    `default_factory` throughout, not because three of these looked untidy as
+    plain defaults but because a plain default is evaluated once, when the
+    class statement runs. Half these fields were frozen at import and half were
+    not, so `Settings()` answered from two different moments in time and a test
+    that set an environment variable saw it honoured or ignored depending on
+    which field it touched.
+    """
+
     media_root: Path = field(
         default_factory=lambda: Path(os.environ.get("MEDIA_ROOT", "media")).resolve()
     )
-    media_url: str = os.environ.get("MEDIA_URL", "/media/")
-    model_dir: str = os.environ.get("MODEL_DIR", "../../ml/models/serving")
+    media_url: str = field(default_factory=lambda: os.environ.get("MEDIA_URL", "/media/"))
+    model_dir: str = field(
+        default_factory=lambda: os.environ.get("MODEL_DIR", "../../ml/models/serving")
+    )
     cors_origins: list[str] = field(
         default_factory=lambda: _list("CORS_ALLOWED_ORIGINS", ["http://localhost:5173"])
     )
     debug: bool = field(default_factory=lambda: _bool("DEBUG", False))
-    max_upload_bytes: int = int(os.environ.get("MAX_UPLOAD_BYTES", 20 * 1024 * 1024))
+    max_upload_bytes: int = field(
+        default_factory=lambda: int(os.environ.get("MAX_UPLOAD_BYTES", 20 * 1024 * 1024))
+    )
 
 
 def settings() -> Settings:
