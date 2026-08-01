@@ -161,7 +161,22 @@ def test_coverage_note_names_what_is_not_covered():
     note = coverage_note(frame, maskable(frame))
     assert "3 of 8" in note
     assert "rsna_pneumonia" in note
-    assert "single collection" in note
+    assert "one collection (covid_radiography)" in note
+
+
+def test_coverage_note_stops_claiming_one_collection_once_masks_span_two():
+    """Once segmentation extends coverage to a second collection the caveat is
+    no longer true, and leaving it in understates the result as badly as the
+    reverse would overstate it."""
+    frame = _frame(
+        [("covid_radiography", "covid", "m.png")] * 3
+        + [("rsna_pneumonia", "normal", "m.png")] * 4
+        + [("rsna_pneumonia", "normal", None)]
+    )
+    note = coverage_note(frame, maskable(frame))
+    assert "span 2 collections" in note
+    assert "single acquisition pipeline" in note
+    assert "cannot separate anatomy" not in note
 
 
 def test_coverage_note_says_so_when_everything_is_covered():

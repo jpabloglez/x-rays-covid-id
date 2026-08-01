@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from cxr.gates.base import GateResult, GateStatus
 from cxr.gates.runner import BLOCKING_GATES, evaluate, render, to_json
 
@@ -115,3 +117,33 @@ def test_json_marks_a_blocked_run_as_not_permitted(tmp_path):
 
     assert payload["blocking"] == ["G2"]
     assert payload["training_permitted"] is False
+
+
+def test_a_skipped_gate_is_not_counted_as_a_passed_one():
+    """The summary a reader actually reads must not overstate what was checked.
+
+    Track 2 runs on a single source, so G4 cannot associate class with source
+    and skips. Reporting "all gates passed" there would hand a corpus a clean
+    bill of health on checks that never executed -- and G4 is precisely the
+    gate Track 2's whole claim rests on.
+    """
+    results = [
+        _result("G1", GateStatus.PASS),
+        _result("G2", GateStatus.PASS),
+        _result("G4", GateStatus.SKIPPED),
+    ]
+    text = render(results)
+    assert "All 3 gates passed" not in text
+    assert "2 of 3 gates passed" in text
+    assert "1 did not run: G4" in text
+
+
+def test_the_all_passed_line_survives_when_nothing_was_skipped():
+    text = render([_result("G1", GateStatus.PASS), _result("G2", GateStatus.PASS)])
+    assert "All 2 gates passed." in text
+
+
+def test_skipped_gates_are_recorded_in_the_json(tmp_path):
+    path = tmp_path / "gates.json"
+    to_json([_result("G1", GateStatus.PASS), _result("G4", GateStatus.SKIPPED)], path)
+    assert json.loads(path.read_text())["skipped"] == ["G4"]

@@ -151,11 +151,25 @@ def coverage_note(frame: pd.DataFrame, subset: pd.DataFrame) -> str:
         return "Every test image carries a lung mask."
     by_source = missing["source"].value_counts().to_dict()
     covered = subset["label"].value_counts().to_dict()
+    sources = sorted(set(subset["source"]))
+    # Whether the covered rows span one collection or several changes what the
+    # ablation can conclude, so it is derived rather than asserted. Saying
+    # "a single collection" when the subset spans two understates the result
+    # exactly as badly as the reverse would overstate it.
+    if len(sources) == 1:
+        scope = (
+            f"The ablation speaks only for the covered rows, and those come from one "
+            f"collection ({sources[0]}), so it cannot separate anatomy from that "
+            "collection's own acquisition signature."
+        )
+    else:
+        scope = (
+            f"The covered rows span {len(sources)} collections ({', '.join(sources)}), so "
+            "the result is not an artefact of any single acquisition pipeline."
+        )
     return (
         f"{len(subset)} of {len(frame)} test images carry a lung mask, covering "
-        f"{covered}. Unmasked sources: {by_source}. The ablation speaks only for the "
-        "covered rows, and those come from a single collection, so it does not "
-        "separate anatomy from that collection's own acquisition signature."
+        f"{covered}. Unmasked sources: {by_source}. {scope}"
     )
 
 

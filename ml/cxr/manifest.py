@@ -15,11 +15,24 @@ import pandas as pd
 
 
 class Label(StrEnum):
-    """The three classes the project targets."""
+    """The classes the project targets, across two different tasks.
+
+    Track 1 pools collections and uses {normal, pneumonia, covid}. Track 2
+    discriminates within a single collection and uses {covid, non_covid},
+    because a molecularly negative patient in a pandemic-era hospital series is
+    usually not healthy -- in BIMCV only a fifth of the negative partition is
+    radiologically normal, the rest carrying effusion, pneumonia, cardiomegaly
+    and so on. Calling those `normal` would be the same error this project
+    refuses for RSNA's "No Lung Opacity / Not Normal", and it would turn Track 2
+    into sick-versus-healthy, reproducing the confound it exists to escape.
+
+    NON_COVID therefore means "tested, not COVID", not "nothing wrong".
+    """
 
     NORMAL = "normal"
     PNEUMONIA = "pneumonia"
     COVID = "covid"
+    NON_COVID = "non_covid"
 
 
 class LabelProvenance(StrEnum):

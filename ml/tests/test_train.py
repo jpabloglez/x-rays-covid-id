@@ -68,7 +68,7 @@ def corpus(tmp_path):
     return root, pd.DataFrame(rows)
 
 
-def _train(corpus, tmp_path, **overrides):
+def _train(corpus, tmp_path, config=None, **overrides):
     from cxr.models import ModelConfig
     from cxr.train import TrainConfig, train
 
@@ -79,9 +79,8 @@ def _train(corpus, tmp_path, **overrides):
         output=tmp_path / "model",
         image_roots={"covid_radiography": root, "rsna_pneumonia": root},
         model_config=ModelConfig(backbone="resnet18", pretrained=False),
-        config=TrainConfig(
-            epochs=3, batch_size=4, accumulate=1, workers=0, freeze_backbone_epochs=1
-        ),
+        config=config
+        or TrainConfig(epochs=3, batch_size=4, accumulate=1, workers=0, freeze_backbone_epochs=1),
         **overrides,
     )
 
@@ -137,3 +136,45 @@ def test_effective_batch_is_the_accumulated_one():
     from cxr.train import TrainConfig
 
     assert TrainConfig(batch_size=8, accumulate=2).effective_batch == 16
+
+
+def test_an_unreachable_min_delta_stops_the_run_on_the_plateau(corpus, tmp_path):
+    """Patience should measure progress, not any movement at all.
+
+    With a gain of 2.0 required, no epoch can ever count as progress, so the
+    run must stop as soon as `patience` epochs have passed rather than using
+    its full budget chasing the fourth decimal place.
+    """
+    from cxr.train import TrainConfig
+
+    checkpoint = _train(
+        corpus,
+        tmp_path,
+        config=TrainConfig(
+            epochs=12, batch_size=4, accumulate=1, workers=0,
+            freeze_backbone_epochs=1, patience=1, min_delta=2.0,
+        ),
+    )
+    assert len(checkpoint.metrics["history"]) < 12
+
+
+def test_the_best_epoch_is_kept_even_when_it_did_not_count_as_progress(corpus, tmp_path):
+    """min_delta governs whether to continue, never which weights to keep.
+
+    A marginal winner found while the run is already on the plateau is still
+    the best model seen, and discarding it would make early stopping cost
+    accuracy rather than just time.
+    """
+    from cxr.train import TrainConfig
+
+    checkpoint = _train(
+        corpus,
+        tmp_path,
+        config=TrainConfig(
+            epochs=4, batch_size=4, accumulate=1, workers=0,
+            freeze_backbone_epochs=1, patience=1, min_delta=2.0,
+        ),
+    )
+    history = checkpoint.metrics["history"]
+    unfrozen = [entry["val_macro_auc"] for entry in history if not entry["backbone_frozen"]]
+    assert checkpoint.metrics["val_macro_auc"] == pytest.approx(max(unfrozen))

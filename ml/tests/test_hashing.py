@@ -38,6 +38,52 @@ def test_dhash_survives_resizing():
     assert hamming(dhash(original), dhash(resized)) <= 8
 
 
+def _twelve_bit(seed, side=64):
+    """A 12-bit radiograph in a 16-bit container, as BIMCV ships them.
+
+    Smooth, and entirely above 255. Both properties matter. Random noise at
+    this depth survives clipping -- the few percent of pixels that land under
+    255 keep enough gradient to hash -- so a noise fixture passes whether the
+    bug is present or not. A real radiograph is smooth and its darkest pixel
+    still sits in the hundreds, which is what makes clipping total.
+    """
+    rng = np.random.default_rng(seed)
+    coarse = Image.fromarray((rng.random((8, 8)) * 255).astype(np.uint8), mode="L")
+    smooth = np.asarray(coarse.resize((side, side), Image.BICUBIC), dtype=np.float64) / 255.0
+    return Image.fromarray((1000 + smooth * 3095).astype(np.uint16))
+
+
+def test_a_sixteen_bit_image_does_not_hash_to_nothing():
+    """`convert("L")` clips at 255, so 12-bit pixel data arrives as pure white.
+
+    A uniform image has no horizontal gradients, so its hash is 256 zero bits
+    -- and every such image then sits within zero bits of every other. On
+    BIMCV that collapsed 501 radiographs from 320 different patients into one
+    "duplicate" group, which the splitter would have had to keep together.
+    """
+    bits = bin(int(dhash(_twelve_bit(0)), 16)).count("1")
+    assert bits > PHASH_BITS // 4, f"only {bits} of {PHASH_BITS} bits set"
+
+
+def test_sixteen_bit_images_of_different_patients_stay_apart():
+    assert hamming(dhash(_twelve_bit(0)), dhash(_twelve_bit(1))) > 12
+
+
+def test_rescaling_the_deep_modes_leaves_eight_bit_hashes_untouched():
+    """The 8-bit collections were hashed before this path existed, and their
+    duplicate groups are a published result; changing them silently would
+    invalidate it."""
+    rng = np.random.default_rng(3)
+    pixels = (rng.random((64, 64)) * 255).astype(np.uint8)
+    image = Image.fromarray(pixels, mode="L")
+    assert dhash(image) == dhash(image.convert("L"))
+
+
+def test_a_uniform_deep_image_hashes_without_dividing_by_zero():
+    blank = Image.fromarray(np.full((32, 32), 2000, dtype=np.uint16))
+    assert int(dhash(blank), 16) == 0
+
+
 def test_unrelated_images_are_far_apart():
     rng = np.random.default_rng(2)
     left = Image.fromarray((rng.random((64, 64)) * 255).astype(np.uint8), mode="L")

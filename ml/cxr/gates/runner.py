@@ -155,7 +155,20 @@ def render(results: list[GateResult], acknowledged: set[str] | None = None) -> s
             "confounds. Training may proceed and the measured values belong in the model card."
         )
     else:
-        lines.append(f"All {len(results)} gates passed.")
+        skipped = [result.gate for result in results if result.status is GateStatus.SKIPPED]
+        if skipped:
+            # A gate that did not run has not cleared anything, and counting it
+            # as a pass is how a corpus acquires a clean bill of health nobody
+            # measured. Track 2 skips G4 because it has one source: its freedom
+            # from source confounding is true by construction, not by test, and
+            # the model card has to say which.
+            lines.append(
+                f"{len(results) - len(skipped)} of {len(results)} gates passed. "
+                f"{len(skipped)} did not run: {', '.join(skipped)}. A skipped gate is not "
+                "a passed gate -- it measured nothing, and nothing about it can be quoted."
+            )
+        else:
+            lines.append(f"All {len(results)} gates passed.")
     return "\n".join(lines)
 
 
@@ -185,6 +198,13 @@ def to_json(
         ],
         "acknowledged": sorted(acknowledged or ()),
         "blocking": [result.gate for result in verdict.blocking],
+        # Listed explicitly so the model card can distinguish a corpus that
+        # cleared a check from one where the check could not be run at all.
+        # Reading `status` per gate would give the same answer, but a reader
+        # counting passes is exactly the reader who will not do that.
+        "skipped": [
+            result.gate for result in results if result.status is GateStatus.SKIPPED
+        ],
         "training_permitted": verdict.ok,
     }
     path.parent.mkdir(parents=True, exist_ok=True)

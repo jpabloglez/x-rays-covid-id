@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from cxr.sources.base import Source, SourceError, SourceInfo
+from cxr.sources.bimcv import BimcvCovid19
 from cxr.sources.covid_radiography import CovidRadiography
 from cxr.sources.nih import ChestXray14
 from cxr.sources.rsna import RsnaPneumonia
 
 REGISTRY: dict[str, type[Source]] = {
+    BimcvCovid19.info.name: BimcvCovid19,
     CovidRadiography.info.name: CovidRadiography,
     ChestXray14.info.name: ChestXray14,
     RsnaPneumonia.info.name: RsnaPneumonia,

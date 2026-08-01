@@ -128,6 +128,22 @@ def main(argv: list[str] | None = None) -> int:
     ablate_parser.add_argument("--workers", type=int, default=2)
     ablate_parser.add_argument("--json", type=Path, default=None)
 
+    segment_parser = subparsers.add_parser(
+        "segment", help="train a lung segmenter and predict masks for sources lacking them"
+    )
+    segment_parser.add_argument("input", type=Path, help="a split manifest")
+    segment_parser.add_argument("--out", required=True, type=Path, help="mask output directory")
+    segment_parser.add_argument("--masks", action="append", metavar="SOURCE=PATH", required=True,
+                                help="existing mask roots, used for training")
+    segment_parser.add_argument("--cache", type=Path, default=None)
+    segment_parser.add_argument("--images", action="append", metavar="SOURCE=PATH", default=None)
+    segment_parser.add_argument("--manifest-out", type=Path, default=None,
+                                help="manifest with predicted mask paths filled in")
+    segment_parser.add_argument("--epochs", type=int, default=12)
+    segment_parser.add_argument("--batch-size", type=int, default=8)
+    segment_parser.add_argument("--workers", type=int, default=2)
+    segment_parser.add_argument("--json", type=Path, default=None)
+
     args = parser.parse_args(argv)
     return {
         "sources": _sources,
@@ -139,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         "cache": _cache,
         "train": _train,
         "ablate": _ablate,
+        "segment": _segment,
     }[args.command](args)
 
 
@@ -320,6 +337,90 @@ def _ablate(args: argparse.Namespace) -> int:
     if args.json:
         write_report(results, args.json)
         print(f"Written to {args.json}")
+    return 0
+
+
+def _segment(args: argparse.Namespace) -> int:
+    import json
+
+    from cxr import cache as image_cache
+    from cxr import segment as seg
+    from cxr.preprocessing import PreprocessingSpec
+
+    frame = pd.read_parquet(args.input)
+    loaded = image_cache.load(args.cache) if args.cache else None
+    spec = loaded.spec if loaded else PreprocessingSpec()
+    roots = _image_roots(args.images)
+    if roots is not None and not isinstance(roots, dict):
+        roots = {source: Path(roots) for source in set(frame["source"])}
+    mask_roots = _image_roots(args.masks)
+
+    config = seg.SegmentConfig(
+        epochs=args.epochs, batch_size=args.batch_size, workers=args.workers
+    )
+    model, val_dice, val_images = seg.train_segmenter(
+        frame, spec=spec, mask_roots=mask_roots, cache=loaded,
+        image_roots=roots, config=config,
+    )
+
+    targets = frame[frame["mask_path"].isna()]
+    if targets.empty:
+        print("every row already carries a mask; nothing to predict")
+        return 0
+
+    predictions = seg.predict_masks(
+        model, targets, spec=spec, out_dir=args.out, cache=loaded,
+        image_roots=roots, config=config,
+    )
+
+    reasons: dict[str, int] = {}
+    for reason in predictions.loc[~predictions["plausible"], "reason"]:
+        for part in str(reason).split("; "):
+            key = part.split(" ")[0] if part else "unknown"
+            reasons[key] = reasons.get(key, 0) + 1
+
+    # Shape statistics for the collection that has ground truth, so the two
+    # domains can be compared rather than the target judged in isolation.
+    existing = frame[frame["mask_path"].notna()]
+    reference = pd.DataFrame()
+    if not existing.empty:
+        sample = existing.sample(min(400, len(existing)), random_state=0)
+        rows = []
+        for row in sample.to_dict("records"):
+            from cxr.masks import load_mask
+            from cxr.preprocessing import reference as ref
+
+            mask = load_mask(Path(mask_roots[row["source"]]) / row["mask_path"]).astype("float32")
+            mask = ref.resize(ref.pad_to_square(mask, 0.0), spec.target_size) > 0.5
+            quality = seg.assess(mask)
+            rows.append({"source": row["source"], **quality.__dict__})
+        reference = pd.DataFrame(rows)
+
+    report = seg.SegmenterReport(
+        val_dice=val_dice,
+        val_images=val_images,
+        target_images=len(predictions),
+        implausible=int((~predictions["plausible"]).sum()),
+        reasons=reasons,
+        statistics=seg.summarise_predictions(predictions, reference),
+    )
+    print()
+    print(report.render())
+
+    if args.manifest_out:
+        # Only plausible masks are written back. A row left without one is
+        # excluded from the ablation, which is the point: an ablation against a
+        # confidently wrong mask looks like a measurement.
+        usable = predictions[predictions["plausible"]].set_index("image_id")["mask_path"]
+        updated = frame.copy()
+        fill = updated["image_id"].map(usable)
+        updated["mask_path"] = updated["mask_path"].fillna(fill)
+        updated.to_parquet(args.manifest_out, index=False)
+        print(f"\nManifest with predicted masks -> {args.manifest_out}")
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8")
+        print(f"Report -> {args.json}")
     return 0
 
 
