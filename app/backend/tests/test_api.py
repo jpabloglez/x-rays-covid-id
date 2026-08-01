@@ -243,3 +243,22 @@ def test_preprocessing_matches_the_training_reference(tmp_path):
     served = prepare(image, spec)
     trained = ref.apply(np.asarray(image.convert("L"), dtype=np.float32), spec)
     assert np.array_equal(served, trained)
+
+
+def test_settings_read_the_environment_when_built_not_when_imported(monkeypatch):
+    """A plain dataclass default runs once, at class-definition time.
+
+    Three fields here were plain defaults and the rest were factories, so
+    `Settings()` answered from two different moments and honoured an
+    environment variable or ignored it depending which field you asked for.
+    """
+    from api.config import Settings
+
+    monkeypatch.setenv("MEDIA_URL", "/somewhere-else/")
+    monkeypatch.setenv("MODEL_DIR", "/opt/models")
+    monkeypatch.setenv("MAX_UPLOAD_BYTES", "1234")
+
+    built = Settings()
+    assert built.media_url == "/somewhere-else/"
+    assert built.model_dir == "/opt/models"
+    assert built.max_upload_bytes == 1234

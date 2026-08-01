@@ -144,16 +144,10 @@ setup/          Python requirements
 `users/` previously exposed list, retrieve, update and delete endpoints for
 every account with no authentication, backed by permission classes that raised
 `UnboundLocalError` before they could deny anything. Those views, URLs,
-serializers and permissions have been deleted. The models remain because
-`AUTH_USER_MODEL` points at them; the API will be rebuilt with real
-authentication during the FastAPI migration.
-
-## Security note
-
-An earlier revision of this repository committed `app/backend/db.sqlite3`,
-including two user rows with password hashes, and a hardcoded `SECRET_KEY`.
-Both are removed from the working tree. Until the history is rewritten those
-values remain reachable in earlier commits and must be treated as compromised.
+serializers and permissions have been deleted. The models remain, serving
+nothing, as the schema reference for the rebuild — which is a rebuild rather
+than a port: real password hashing and authorisation on every route that
+touches an account.
 
 ## License
 
