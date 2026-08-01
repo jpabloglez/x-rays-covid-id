@@ -15,6 +15,13 @@ from PIL import Image
 
 from cxr.preprocessing.spec import PreprocessingSpec, ResizeMode
 
+# Pillow modes whose samples do not fit in a byte. `convert("L")` clips these
+# at 255 rather than rescaling, which turns a 12-bit radiograph into a white
+# rectangle. Part of the spec's definition, so a reimplementation has to
+# reproduce it: get this wrong and the model is served a different image than
+# it was trained on.
+DEEP_MODES = frozenset({"I", "I;16", "I;16B", "I;16L", "I;16N", "F"})
+
 
 def window(image: np.ndarray, spec: PreprocessingSpec) -> np.ndarray:
     """Clip to the configured percentiles and scale to [0, 1].
@@ -107,4 +114,12 @@ def load_grayscale(path) -> np.ndarray:
 
         return decode(path)
     with Image.open(path) as image:
+        if image.mode in DEEP_MODES:
+            # Not convert("L"): it clips at 255, and BIMCV's 12-bit pixel data
+            # runs to about 4095 with its darkest pixel already in the
+            # hundreds, so every radiograph would arrive as uniform white. The
+            # raw values go through untouched because `window` rescales by
+            # percentile immediately afterwards, which is both the correct
+            # place for it and more robust than anything done here.
+            return np.asarray(image, dtype=np.float32)
         return np.asarray(image.convert("L"), dtype=np.float32)

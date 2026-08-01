@@ -141,6 +141,31 @@ def predict(model, loader, device, *, amp: bool = True) -> tuple[np.ndarray, np.
     return np.concatenate(logits), np.concatenate(labels)
 
 
+def _provenance_note(frame: pd.DataFrame, classes: tuple[str, ...]) -> str:
+    """Say what corpus this is, derived rather than asserted.
+
+    This string used to read "Track 1: pooled corpus, knowingly confounded" no
+    matter what was trained. That was true of every run that existed when it
+    was written and false the moment a second task did, which is the failure
+    mode this project keeps hitting: a fluent sentence describing the run its
+    author had in mind rather than the one that happened.
+    """
+    sources = sorted(set(frame["source"]))
+    task = f"{len(classes)}-class ({', '.join(classes)})"
+    if len(sources) == 1:
+        scope = (
+            f"single source ({sources[0]}), so the class cannot be confounded with the "
+            "collection -- by construction, not by measurement. Confounds within the "
+            "source remain possible and are not ruled out by this."
+        )
+    else:
+        scope = (
+            f"pooled across {len(sources)} sources ({', '.join(sources)}), so the class may "
+            "be confounded with the collection."
+        )
+    return f"{task}, {scope} Read the gate report in `gates` before quoting any number here."
+
+
 def train(
     frame: pd.DataFrame,
     *,
@@ -164,7 +189,11 @@ def train(
 
     device = resolve_device()
     output.mkdir(parents=True, exist_ok=True)
-    shared = {"spec": spec, "cache": cache, "image_roots": image_roots}
+    # The model head is the single declaration of which task this is. Taking
+    # the classes from anywhere else would let the labels and the output layer
+    # describe different problems, and the run would train quite happily.
+    classes = model_config.classes
+    shared = {"spec": spec, "cache": cache, "image_roots": image_roots, "classes": classes}
 
     train_set = for_split(frame, "train", **shared, augment=augmentation(spec))
     val_set = for_split(frame, "val", **shared)
@@ -172,7 +201,7 @@ def train(
     val_loader = _loader(val_set, config, shuffle=False)
 
     model = build_model(model_config).to(device)
-    weights = torch.tensor(class_weights(train_set.frame), device=device)
+    weights = torch.tensor(class_weights(train_set.frame, classes=classes), device=device)
     loss_fn = nn.CrossEntropyLoss(weight=weights)
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
@@ -220,7 +249,7 @@ def train(
                     schedule.step()
 
         val_logits, val_labels = predict(model, val_loader, device, amp=config.amp)
-        scored = evaluate(val_labels, softmax(val_logits))
+        scored = evaluate(val_labels, softmax(val_logits), classes=classes)
         history.append(
             {
                 "epoch": epoch,
@@ -297,7 +326,7 @@ def train(
     )
     uncalibrated = softmax(test_logits)
     calibrated = softmax(test_logits, temperature)
-    result = evaluate(test_labels, calibrated)
+    result = evaluate(test_labels, calibrated, classes=classes)
 
     checkpoint = Checkpoint(
         model=model_config,
@@ -313,12 +342,10 @@ def train(
             "train_config": asdict(config),
             "effective_batch": config.effective_batch,
             "device": str(device),
+            "sources": sorted(set(frame["source"])),
         },
         gates=gates or {},
-        notes=(
-            "Track 1: pooled corpus, knowingly confounded. Read the gate report in "
-            "`gates` before quoting any number here."
-        ),
+        notes=_provenance_note(frame, classes),
     )
     checkpoint.write(output, state_dict=best_state)
     np.savez_compressed(

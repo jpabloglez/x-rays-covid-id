@@ -178,3 +178,33 @@ def test_the_best_epoch_is_kept_even_when_it_did_not_count_as_progress(corpus, t
     history = checkpoint.metrics["history"]
     unfrozen = [entry["val_macro_auc"] for entry in history if not entry["backbone_frozen"]]
     assert checkpoint.metrics["val_macro_auc"] == pytest.approx(max(unfrozen))
+
+
+def test_the_provenance_note_is_derived_from_the_corpus():
+    """This string was hardcoded to "Track 1: pooled corpus, knowingly
+    confounded" and printed on every run regardless of what was trained. It was
+    true of everything that existed when it was written and false as soon as a
+    second task did."""
+    from cxr.data import CLASSES, TRACK2_CLASSES
+    from cxr.train import _provenance_note
+
+    pooled = _provenance_note(
+        pd.DataFrame({"source": ["rsna_pneumonia", "covid_radiography"]}), CLASSES
+    )
+    assert "pooled across 2 sources" in pooled
+    assert "may be confounded with the collection" in pooled
+
+    single = _provenance_note(pd.DataFrame({"source": ["bimcv_covid19"] * 3}), TRACK2_CLASSES)
+    assert "single source (bimcv_covid19)" in single
+    assert "by construction, not by measurement" in single
+    assert "2-class (non_covid, covid)" in single
+
+
+def test_the_single_source_note_does_not_claim_freedom_from_every_confound():
+    """One source rules out the class-source confound and nothing else. Track 2
+    still carries a view-position and a sex skew."""
+    from cxr.data import TRACK2_CLASSES
+    from cxr.train import _provenance_note
+
+    note = _provenance_note(pd.DataFrame({"source": ["bimcv_covid19"]}), TRACK2_CLASSES)
+    assert "Confounds within the source remain possible" in note

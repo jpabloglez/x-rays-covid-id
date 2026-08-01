@@ -22,6 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 from cxr import dedupe, manifest, sources, splits
+from cxr.data import TASKS, SplitError, task_for
 from cxr.gates import run_all
 from cxr.gates.runner import BLOCKING_GATES, evaluate, render, to_json
 from cxr.hashing import DEFAULT_THRESHOLD_BITS
@@ -106,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     train_parser.add_argument("--images", action="append", metavar="SOURCE=PATH", default=None)
     train_parser.add_argument("--gates", type=Path, default=None, help="gates.json to embed")
     train_parser.add_argument("--backbone", default="densenet121")
+    train_parser.add_argument("--task", choices=sorted(TASKS), default=None,
+                              help="which task to train; derived from the labels if omitted")
     train_parser.add_argument("--epochs", type=int, default=20)
     train_parser.add_argument("--batch-size", type=int, default=8)
     train_parser.add_argument("--accumulate", type=int, default=2)
@@ -270,6 +273,16 @@ def _train(args: argparse.Namespace) -> int:
         print(f"{args.input} has no split column; run `cxr split` first", file=sys.stderr)
         return 2
 
+    if args.task:
+        task, classes = args.task, TASKS[args.task]
+    else:
+        try:
+            task, classes = task_for(set(frame["label"]))
+        except SplitError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+    print(f"task: {task} ({', '.join(classes)})")
+
     loaded = image_cache.load(args.cache) if args.cache else None
     spec = loaded.spec if loaded else PreprocessingSpec()
     roots = _image_roots(args.images)
@@ -293,7 +306,9 @@ def _train(args: argparse.Namespace) -> int:
         output=args.out,
         cache=loaded,
         image_roots=roots,
-        model_config=ModelConfig(backbone=args.backbone, pretrained=not args.no_pretrained),
+        model_config=ModelConfig(
+            backbone=args.backbone, pretrained=not args.no_pretrained, classes=classes
+        ),
         config=TrainConfig(
             epochs=args.epochs,
             batch_size=args.batch_size,

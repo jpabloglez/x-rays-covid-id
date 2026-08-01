@@ -1,9 +1,14 @@
 # `cxr` — dataset assembly and leakage gates
 
-Research code for the chest radiograph classifier. **No model is trained yet.**
-What exists is the layer that has to come first: turning downloaded datasets
-into a validated manifest, splitting it so the splits mean something, and
-refusing to proceed when the corpus is confounded.
+Research code for the chest radiograph classifier: turning downloaded datasets
+into a validated manifest, splitting it so the splits mean something, refusing
+to proceed when the corpus is confounded, and then measuring what a score is
+actually made of.
+
+Two models are trained. Track 1 scores 0.9925 macro AUC and keeps 91.5% of that
+signal with the lung fields blanked out. Track 2 scores 0.7460 and keeps 83.7%.
+**[RESULTS.md](RESULTS.md) is the write-up**, and the gap between those two
+numbers is the finding — neither is a diagnostic device.
 
 This package never imports the web application, and the application never
 imports it. They will communicate through exactly two artifacts: a serialised
@@ -18,20 +23,20 @@ clinically usable. The dominant cause is **source confounding**: positives from
 one repository, negatives from another, so the network learns the scanner, the
 crop convention or the burnt-in marker rather than the pathology.
 
-That is not an avoidable mistake here — it is forced by the available data:
+For Track 1 that is not an avoidable mistake — it is forced by the available
+data. ChestX-ray14 (2017), RSNA Pneumonia (2018) and CheXpert (2019) all
+predate the pandemic and carry no COVID label, so a three-class corpus needs a
+fourth, pandemic-era source, and at that moment class becomes predictable from
+provenance. The gates measure how badly rather than letting it pass unnoticed:
+G3 found source 79.5% predictable from 32×32 thumbnails, and G4 failed by
+construction.
 
-```
-$ cxr sources
-...
-Only ['covid_radiography'] can supply a COVID label. Every COVID image will
-come from one source, so source alone predicts that class and G4 will fail by
-construction. That is a property of the available public data, not a bug.
-```
-
-ChestX-ray14 (2017), RSNA Pneumonia (2018) and CheXpert (2019) all predate the
-pandemic and carry no COVID label. So a three-class corpus needs a fourth,
-pandemic-era source, and at that moment class becomes predictable from
-provenance. The gates measure how badly, rather than letting it pass unnoticed.
+Registering BIMCV-COVID19 is what makes the second track possible. It publishes
+molecularly positive *and* negative patients from one hospital network, so
+class and collection are decoupled without a second source having to be
+trusted. `cxr sources` now lists two collections that can supply a COVID label,
+and the warning that once said only one could no longer fires — that line was
+driven by the registry, not hardcoded, so it retired itself.
 
 ## The gates
 
@@ -90,6 +95,20 @@ cxr train data/manifests/split.parquet --out models/track1 \
 `train` reads the gate report and refuses a split with blocking failures, so
 the two are meant to run in that order. Acknowledged confounds are carried into
 the checkpoint and printed above every score.
+
+The class set is a property of the task, not of the module. `--task` selects it
+explicitly; omitted, it is derived by matching the manifest's labels against the
+registered tasks, so the ordering stays canonical and labels matching no task
+are refused rather than guessed. `ModelConfig.classes` is the single
+declaration — taking it from anywhere else would let the labels and the output
+layer describe different problems, and the run would train quite happily on the
+mismatch.
+
+**A score is not a result until the ablation has run.** `cxr ablate` blanks the
+lung fields and scores again, in both directions, because either alone is
+ambiguous. Track 1 keeps 91.5% of its signal with the anatomy removed; that
+number belongs beside the 0.9925, not in a footnote. See
+[RESULTS.md](RESULTS.md).
 
 **Install torch for your GPU before the extras.** Which CUDA build you get
 matters more than which release. A wheel compiled for newer architectures than

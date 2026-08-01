@@ -18,19 +18,55 @@ from cxr.manifest import Label
 from cxr.preprocessing import PreprocessingSpec
 from cxr.preprocessing import reference as ref
 
-# Fixed, not derived from whatever happens to be in the manifest. A model whose
-# output index 0 means "covid" in one run and "normal" in the next is a model
-# whose saved weights cannot be trusted against a saved threshold.
-CLASSES: tuple[str, ...] = (str(Label.NORMAL), str(Label.PNEUMONIA), str(Label.COVID))
+# Fixed per task, not derived from whatever happens to be in the manifest. A
+# model whose output index 0 means "covid" in one run and "normal" in the next
+# is a model whose saved weights cannot be trusted against a saved threshold.
+#
+# There are two tasks, and they are not the same question asked at different
+# difficulties. Track 1 asks what a pooled corpus can be made to score, knowing
+# the class is confounded with the collection. Track 2 asks whether COVID is
+# separable from other reasons to be x-rayed within one hospital network. The
+# class sets are named separately so a run has to say which it is doing.
+TRACK1_CLASSES: tuple[str, ...] = (str(Label.NORMAL), str(Label.PNEUMONIA), str(Label.COVID))
+# `covid` last, so the positive class is the highest index in the binary task
+# and `probabilities[:, 1]` means what a reader expects it to mean.
+TRACK2_CLASSES: tuple[str, ...] = (str(Label.NON_COVID), str(Label.COVID))
+
+CLASSES: tuple[str, ...] = TRACK1_CLASSES
 CLASS_INDEX = {name: index for index, name in enumerate(CLASSES)}
+
+
+TASKS: dict[str, tuple[str, ...]] = {"track1": TRACK1_CLASSES, "track2": TRACK2_CLASSES}
+
+
+def class_index(classes: tuple[str, ...]) -> dict[str, int]:
+    return {name: index for index, name in enumerate(classes)}
+
+
+def task_for(labels: set[str]) -> tuple[str, tuple[str, ...]]:
+    """Which task a manifest's labels describe, or an error naming the choices.
+
+    Matched against the registered tasks rather than read off the manifest, so
+    the class ordering is still the fixed one. Deriving the order from whatever
+    the frame happened to contain is what makes index 0 mean `covid` in one run
+    and `normal` in the next.
+    """
+    matches = [name for name, classes in TASKS.items() if set(classes) == labels]
+    if len(matches) == 1:
+        return matches[0], TASKS[matches[0]]
+    raise SplitError(
+        f"labels {sorted(labels)} match no single task; known tasks are "
+        + "; ".join(f"{name} ({', '.join(classes)})" for name, classes in TASKS.items())
+        + ". Pass the task explicitly rather than guessing."
+    )
 
 
 class SplitError(ValueError):
     """Raised when a requested split cannot be served."""
 
 
-def class_weights(frame: pd.DataFrame) -> np.ndarray:
-    """Inverse-frequency weights in CLASSES order.
+def class_weights(frame: pd.DataFrame, *, classes: tuple[str, ...] = CLASSES) -> np.ndarray:
+    """Inverse-frequency weights in `classes` order.
 
     Deliberately not resampling. Oversampling the minority class duplicates
     images inside the training split, which is the same repetition G2 exists to
@@ -38,11 +74,11 @@ def class_weights(frame: pd.DataFrame) -> np.ndarray:
     that makes runs incomparable.
     """
     counts = frame["label"].value_counts()
-    frequencies = np.array([counts.get(name, 0) for name in CLASSES], dtype=np.float64)
+    frequencies = np.array([counts.get(name, 0) for name in classes], dtype=np.float64)
     if (frequencies == 0).any():
-        absent = [name for name, count in zip(CLASSES, frequencies, strict=True) if count == 0]
+        absent = [name for name, count in zip(classes, frequencies, strict=True) if count == 0]
         raise SplitError(f"class(es) {absent} have no rows; a weight for them is undefined")
-    weights = frequencies.sum() / (len(CLASSES) * frequencies)
+    weights = frequencies.sum() / (len(classes) * frequencies)
     return weights.astype(np.float32)
 
 
@@ -62,6 +98,7 @@ class RadiographDataset:
         cache: ImageCache | None = None,
         image_roots: dict[str, Path] | None = None,
         augment=None,
+        classes: tuple[str, ...] = CLASSES,
     ) -> None:
         if cache is None and not image_roots:
             raise SplitError("give either a cache or image roots; there is nothing to read from")
@@ -78,8 +115,20 @@ class RadiographDataset:
         self.cache = cache
         self.image_roots = image_roots or {}
         self.augment = augment
+        self.classes = classes
+        index = class_index(classes)
+        # Named rather than a bare KeyError. With two tasks live, handing a
+        # Track 1 manifest to a Track 2 run is an easy mistake and the labels
+        # are where it first becomes visible; "KeyError: 'pneumonia'" does not
+        # say which of the two things was wrong.
+        unknown = sorted(set(self.frame["label"]) - index.keys())
+        if unknown:
+            raise SplitError(
+                f"labels {unknown} are not in this task's classes {list(classes)}; "
+                "the manifest and the model are describing different tasks"
+            )
         self.labels = np.array(
-            [CLASS_INDEX[label] for label in self.frame["label"]], dtype=np.int64
+            [index[label] for label in self.frame["label"]], dtype=np.int64
         )
 
     def __len__(self) -> int:
@@ -113,6 +162,7 @@ def for_split(
     cache: ImageCache | None = None,
     image_roots: dict[str, Path] | None = None,
     augment=None,
+    classes: tuple[str, ...] = CLASSES,
 ) -> RadiographDataset:
     """The rows of one split, refusing to invent data when there are none."""
     if "split" not in frame.columns:
@@ -121,5 +171,5 @@ def for_split(
     if rows.empty:
         raise SplitError(f"split {split!r} is empty; splits present: {sorted(set(frame['split']))}")
     return RadiographDataset(
-        rows, spec=spec, cache=cache, image_roots=image_roots, augment=augment
+        rows, spec=spec, cache=cache, image_roots=image_roots, augment=augment, classes=classes
     )

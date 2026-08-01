@@ -26,7 +26,7 @@ import pandas as pd
 
 from cxr.cache import ImageCache
 from cxr.confound import Ablation, blank_lungs, coverage_note, maskable
-from cxr.data import CLASS_INDEX, SplitError
+from cxr.data import CLASSES, SplitError, class_index
 from cxr.evaluate import evaluate, softmax
 from cxr.masks import load_mask
 from cxr.models import Checkpoint, build_model
@@ -56,6 +56,7 @@ class AblationDataset:
         mask_roots: dict[str, Path],
         cache: ImageCache | None = None,
         image_roots: dict[str, Path] | None = None,
+        classes: tuple[str, ...] = CLASSES,
     ) -> None:
         allowed = (BASELINE, *VARIANTS)
         if variant not in allowed:
@@ -69,8 +70,9 @@ class AblationDataset:
         self.mask_roots = mask_roots
         self.cache = cache
         self.image_roots = image_roots or {}
+        self.classes = classes
         self.labels = np.array(
-            [CLASS_INDEX[label] for label in self.frame["label"]], dtype=np.int64
+            [class_index(classes)[label] for label in self.frame["label"]], dtype=np.int64
         )
 
     def __len__(self) -> int:
@@ -141,7 +143,7 @@ def run(
     def score(variant: str):
         dataset = AblationDataset(
             subset, spec=checkpoint.spec, variant=variant, mask_roots=mask_roots,
-            cache=cache, image_roots=image_roots,
+            cache=cache, image_roots=image_roots, classes=checkpoint.model.classes,
         )
         loader = torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, shuffle=False, num_workers=workers
