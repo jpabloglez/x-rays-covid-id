@@ -289,3 +289,30 @@ def test_windowing_choice_is_recorded_in_the_spec():
     """Which path an image took matters: if VOI-LUT availability correlates
     with source, then so does the preprocessing, and that is a confound."""
     assert PreprocessingSpec().windowing is Windowing.VOI_LUT
+
+
+def test_a_sixteen_bit_radiograph_is_not_loaded_as_a_white_rectangle(tmp_path):
+    """`convert("L")` clips at 255. BIMCV's 12-bit data runs to ~4095 with its
+    darkest pixel already in the hundreds, so every image would load uniform
+    white -- and `window` would then return flat mid-grey without complaint.
+    The model would have trained on 1463 identical squares.
+    """
+    from cxr.preprocessing.reference import load_grayscale
+
+    coarse = Image.fromarray((np.random.default_rng(0).random((8, 8)) * 255).astype(np.uint8), "L")
+    smooth = np.asarray(coarse.resize((64, 64), Image.BICUBIC), dtype=np.float64) / 255.0
+    path = tmp_path / "chest.png"
+    Image.fromarray((1000 + smooth * 3095).astype(np.uint16)).save(path)
+
+    loaded = load_grayscale(path)
+    assert loaded.max() > 255, "16-bit range was clipped away"
+    assert loaded.std() > 1.0, "image arrived flat"
+
+
+def test_an_eight_bit_image_still_loads_exactly_as_before(tmp_path):
+    from cxr.preprocessing.reference import load_grayscale
+
+    pixels = (np.random.default_rng(1).random((32, 32)) * 255).astype(np.uint8)
+    path = tmp_path / "eight.png"
+    Image.fromarray(pixels, mode="L").save(path)
+    assert np.array_equal(load_grayscale(path), pixels.astype(np.float32))

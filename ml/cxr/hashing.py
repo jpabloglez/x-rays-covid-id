@@ -15,13 +15,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+# One definition, shared with the preprocessing reference. Two copies of this
+# set is one copy that will not be updated when a mode is added, and the
+# failure is silent in both directions.
+from cxr.preprocessing.reference import DEEP_MODES as _DEEP_MODES
+
 PHASH_BITS = 256
 _DHASH_SIDE = 16
 
-# Modes whose samples do not fit in a byte. PIL converts these to "L" by
-# clipping at 255 rather than rescaling, so a 12-bit radiograph stored in
-# `I;16` arrives as uniform white.
-_DEEP_MODES = frozenset({"I", "I;16", "I;16B", "I;16L", "I;16N", "F"})
 
 
 def _grayscale(image: Image.Image) -> Image.Image:
