@@ -12,8 +12,6 @@ select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "PTH", "RUF"]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query"]
 
 [tool.ruff.lint.per-file-ignores]
-# Django's conventional `from .settings import *` re-export.
-"app/backend/backend/test_settings.py" = ["F403", "F405", "E402"]
 # The API tests skip when fastapi or torch is missing, so the imports they
 # guard have to come after the importorskip calls.
 "app/backend/tests/test_api.py" = ["E402"]
