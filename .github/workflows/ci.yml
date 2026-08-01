@@ -27,18 +27,22 @@ jobs:
       - name: Lint
         run: ruff check .
 
-      - name: Django system checks
+      - name: The API starts with no models on disk
+        # The commonest deployment mistake is an empty MODEL_DIR. It must give
+        # a service that runs and reports the problem, not one that fails to
+        # boot, so this is checked rather than assumed.
         working-directory: app/backend
         env:
-          DJANGO_DEBUG: "false"
-          DJANGO_SECRET_KEY: ci-only-key-not-used-to-protect-anything
-        run: python manage.py check --deploy --fail-level ERROR
-
-      - name: No missing migrations
-        working-directory: app/backend
-        env:
-          DJANGO_DEBUG: "true"
-        run: python manage.py makemigrations --check --dry-run
+          MODEL_DIR: /nonexistent
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from api.main import create_app
+          body = TestClient(create_app()).get("/health").json()
+          assert body["status"] == "ok", body
+          assert body["inference_available"] is False, body
+          print("starts clean with no models:", body)
+          PY
 
       - name: Tests
         working-directory: app/backend

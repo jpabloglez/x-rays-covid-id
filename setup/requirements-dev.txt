@@ -2,5 +2,5 @@
 -r requirements.txt
 
 pytest==8.3.3
-pytest-django==4.9.0
+httpx==0.28.1          # required by fastapi.testclient
 ruff==0.6.9

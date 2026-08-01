@@ -63,16 +63,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "rest_framework",
-    "corsheaders",
     "users",
-    "files",
 ]
 
 MIDDLEWARE = [
-    # CorsMiddleware has to run before CommonMiddleware so that the headers
-    # survive a redirect, and before anything that can short-circuit.
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -84,7 +78,6 @@ MIDDLEWARE = [
 
 # The dev frontend talks to the backend through Vite's proxy, so same-origin;
 # this list only matters when the frontend is served from another host.
-CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS", ["http://localhost:3000"])
 
 ROOT_URLCONF = "backend.urls"
 

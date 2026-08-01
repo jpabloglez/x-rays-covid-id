@@ -30,13 +30,19 @@ services:
       - path: .env
         required: false
     environment:
-      DJANGO_MEDIA_ROOT: ${DJANGO_MEDIA_ROOT:-/var/www/static}
+      MEDIA_ROOT: ${MEDIA_ROOT:-/var/www/static}
+      MEDIA_URL: ${MEDIA_URL:-/media/}
+      # Exports written by `cxr export`. Mounted read-only below; without
+      # them the service still starts and /predict answers 503.
+      MODEL_DIR: ${MODEL_DIR:-/var/www/models}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
     ports:
       - 3080:3080
     volumes:
       - ./app/backend:/var/www/app/backend
       - media_volume:/var/www/static
-    command: python manage.py runserver 0.0.0.0:3080
+      - ./ml/models/serving:/var/www/models:ro
+    command: uvicorn api.main:app --host 0.0.0.0 --port 3080 --reload
     tty: true
     networks:
       - app-network
