@@ -1,16 +1,19 @@
-FROM python:3.10
+FROM python:3.11-slim
 ARG PIP_ARGS=
 ENV PYTHONUNBUFFERED 1
 
 WORKDIR /var/www/app
 
 # Requirements have to be pulled and installed here, otherwise caching won't work
+# The ml package is installed from source (-e ./ml in requirements), so it
+# has to be present before pip runs.
 COPY ./setup/requirements.txt /var/www/app/requirements.txt
+COPY ./ml /var/www/app/ml
 
 # ADD ./app /var/www/app
 
 RUN pip install -U pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Change www-data user to match the host system UID and GID and chown www directory
 RUN usermod --non-unique --uid 1000 www-data \
@@ -22,3 +25,6 @@ USER www-data
 WORKDIR /var/www/app/backend
 
 EXPOSE 3080
+
+# uvicorn, not manage.py: the HTTP surface is FastAPI as of XRAYS-09.
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3080"]
