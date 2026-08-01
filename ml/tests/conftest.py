@@ -171,3 +171,50 @@ def confounded_corpus(tmp_path: Path) -> tuple[Path, object]:
     ]
     records = write_corpus(tmp_path, spec, seed=2)
     return tmp_path, manifest.from_records(records)
+
+
+def _write_dicom(path, pixels, *, photometric="MONOCHROME2", **extra):
+    """Build a DICOM on disk. Lives here rather than in a test module.
+
+    Two test files need it, and the obvious way to share it -- importing from
+    the other test module -- only works when the runner happens to put the
+    rootdir on sys.path. `python -m pytest` does; a bare `pytest` does not, so
+    it passed locally and failed in CI for two merges. conftest is importable
+    by construction, which is the point of it.
+    """
+    # Imported inside the function, not at module scope: conftest is loaded for
+    # every test run, and the gate tests deliberately do not depend on pydicom.
+    # A module-level import here would make the whole suite need it.
+    import pydicom
+    from pydicom.dataset import Dataset, FileMetaDataset
+    from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage
+
+    meta = FileMetaDataset()
+    meta.MediaStorageSOPClassUID = SecondaryCaptureImageStorage
+    meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+    dataset = Dataset()
+    dataset.file_meta = meta
+    dataset.SOPClassUID = SecondaryCaptureImageStorage
+    dataset.SOPInstanceUID = meta.MediaStorageSOPInstanceUID
+    dataset.Modality = "DX"
+    dataset.PhotometricInterpretation = photometric
+    dataset.SamplesPerPixel = 1
+    dataset.BitsAllocated = 16
+    dataset.BitsStored = 16
+    dataset.HighBit = 15
+    dataset.PixelRepresentation = 0
+    dataset.Rows, dataset.Columns = pixels.shape
+    dataset.PixelData = pixels.astype(np.uint16).tobytes()
+    for key, value in extra.items():
+        setattr(dataset, key, value)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dataset.save_as(path, enforce_file_format=True)
+    return path
+
+
+@pytest.fixture
+def write_dicom():
+    return _write_dicom

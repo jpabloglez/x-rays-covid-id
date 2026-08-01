@@ -160,45 +160,15 @@ def test_load_grayscale_reads_a_png(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def _write_dicom(path, pixels, *, photometric="MONOCHROME2", **extra):
-    from pydicom.dataset import Dataset, FileMetaDataset
-    from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage
-
-    meta = FileMetaDataset()
-    meta.MediaStorageSOPClassUID = SecondaryCaptureImageStorage
-    meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
-    meta.TransferSyntaxUID = ExplicitVRLittleEndian
-
-    dataset = Dataset()
-    dataset.file_meta = meta
-    dataset.SOPClassUID = SecondaryCaptureImageStorage
-    dataset.SOPInstanceUID = meta.MediaStorageSOPInstanceUID
-    dataset.Modality = "DX"
-    dataset.PhotometricInterpretation = photometric
-    dataset.SamplesPerPixel = 1
-    dataset.BitsAllocated = 16
-    dataset.BitsStored = 16
-    dataset.HighBit = 15
-    dataset.PixelRepresentation = 0
-    dataset.Rows, dataset.Columns = pixels.shape
-    dataset.PixelData = pixels.astype(np.uint16).tobytes()
-    for key, value in extra.items():
-        setattr(dataset, key, value)
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    dataset.save_as(path, enforce_file_format=True)
-    return path
-
-
-def test_monochrome1_is_inverted_to_match_everything_else(tmp_path):
+def test_monochrome1_is_inverted_to_match_everything_else(tmp_path, write_dicom):
     """The trap. A fifth of chest DICOMs store low-is-bright, and leaving them
     that way hands the model a perfect proxy for the equipment vendor.
     """
     ramp = np.tile(np.linspace(0, 4000, 64, dtype=np.uint16), (64, 1))
 
-    normal = ref.load_grayscale(_write_dicom(tmp_path / "m2.dcm", ramp))
+    normal = ref.load_grayscale(write_dicom(tmp_path / "m2.dcm", ramp))
     inverted = ref.load_grayscale(
-        _write_dicom(tmp_path / "m1.dcm", ramp, photometric="MONOCHROME1")
+        write_dicom(tmp_path / "m1.dcm", ramp, photometric="MONOCHROME1")
     )
 
     # Both must end up with dense tissue bright, so the two decode to the same
@@ -207,8 +177,8 @@ def test_monochrome1_is_inverted_to_match_everything_else(tmp_path):
     assert inverted[0, 0] > inverted[0, -1]
 
 
-def test_monochrome1_is_detected_from_the_header(tmp_path):
-    path = _write_dicom(
+def test_monochrome1_is_detected_from_the_header(tmp_path, write_dicom):
+    path = write_dicom(
         tmp_path / "m1.dcm", np.zeros((8, 8), np.uint16), photometric="MONOCHROME1"
     )
     from cxr.preprocessing.dicom import is_monochrome1
@@ -216,8 +186,8 @@ def test_monochrome1_is_detected_from_the_header(tmp_path):
     assert is_monochrome1(path)
 
 
-def test_deidentify_keeps_what_modelling_needs_and_drops_the_rest(tmp_path):
-    path = _write_dicom(
+def test_deidentify_keeps_what_modelling_needs_and_drops_the_rest(tmp_path, write_dicom):
+    path = write_dicom(
         tmp_path / "in.dcm",
         np.zeros((8, 8), np.uint16),
         PatientName="DOE^JANE",
@@ -247,10 +217,10 @@ def test_deidentify_keeps_what_modelling_needs_and_drops_the_rest(tmp_path):
         assert tag in removed
 
 
-def test_deidentify_is_an_allowlist_not_a_denylist(tmp_path):
+def test_deidentify_is_an_allowlist_not_a_denylist(tmp_path, write_dicom):
     """A denylist is a list of the places you thought of. An unusual private
     tag nobody enumerated must still be dropped."""
-    path = _write_dicom(tmp_path / "in.dcm", np.zeros((8, 8), np.uint16))
+    path = write_dicom(tmp_path / "in.dcm", np.zeros((8, 8), np.uint16))
     dataset = pydicom.dcmread(path)
     dataset.add_new(0x00091001, "LO", "SITE-PATIENT-1234")
     dataset.save_as(path, enforce_file_format=True)
@@ -262,23 +232,23 @@ def test_deidentify_is_an_allowlist_not_a_denylist(tmp_path):
     assert 0x00091001 not in pydicom.dcmread(out)
 
 
-def test_burned_in_annotation_is_reported_when_declared(tmp_path):
+def test_burned_in_annotation_is_reported_when_declared(tmp_path, write_dicom):
     from cxr.preprocessing.dicom import burned_in_annotation_risk
 
-    flagged = _write_dicom(
+    flagged = write_dicom(
         tmp_path / "y.dcm", np.zeros((8, 8), np.uint16), BurnedInAnnotation="YES"
     )
-    silent = _write_dicom(tmp_path / "n.dcm", np.zeros((8, 8), np.uint16))
+    silent = write_dicom(tmp_path / "n.dcm", np.zeros((8, 8), np.uint16))
 
     assert burned_in_annotation_risk(flagged) == "YES"
     # Absent means unknown, not safe.
     assert burned_in_annotation_risk(silent) is None
 
 
-def test_a_dicom_survives_the_whole_pipeline(tmp_path):
+def test_a_dicom_survives_the_whole_pipeline(tmp_path, write_dicom):
     rng = np.random.default_rng(5)
     pixels = (rng.random((80, 60)) * 3000).astype(np.uint16)
-    path = _write_dicom(tmp_path / "chest.dcm", pixels, WindowCenter=1500, WindowWidth=3000)
+    path = write_dicom(tmp_path / "chest.dcm", pixels, WindowCenter=1500, WindowWidth=3000)
 
     result = apply(ref.load_grayscale(path), PreprocessingSpec(target_size=64))
     assert result.shape == (3, 64, 64)
