@@ -118,6 +118,14 @@ def main(argv: list[str] | None = None) -> int:
     train_parser.add_argument("--no-amp", action="store_true")
     train_parser.add_argument("--no-pretrained", action="store_true")
 
+    export_parser = subparsers.add_parser(
+        "export", help="freeze a checkpoint into a TorchScript file the app can serve"
+    )
+    export_parser.add_argument("checkpoint", type=Path, help="a directory written by cxr train")
+    export_parser.add_argument("--out", required=True, type=Path)
+    export_parser.add_argument("--ablation", type=Path, default=None,
+                               help="ablation.json, so retention travels with the weights")
+
     ablate_parser = subparsers.add_parser(
         "ablate", help="score a checkpoint with the lung fields removed, and kept"
     )
@@ -157,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         "gates": _gates,
         "cache": _cache,
         "train": _train,
+        "export": _export,
         "ablate": _ablate,
         "segment": _segment,
     }[args.command](args)
@@ -256,6 +265,25 @@ def _cache(args: argparse.Namespace) -> int:
     )
     gigabytes = len(built) * spec.target_size**2 / 1e9
     print(f"cached {len(built)} images at {spec.target_size}px -> {args.out} ({gigabytes:.1f} GB)")
+    return 0
+
+
+def _export(args: argparse.Namespace) -> int:
+    from cxr.export import export
+
+    metadata = export(args.checkpoint, args.out, ablation=args.ablation)
+    size = args.out.stat().st_size / 1e6
+    print(f"{args.checkpoint} -> {args.out} ({size:.1f} MB)")
+    print(f"  classes     {', '.join(metadata['classes'])}")
+    print(f"  macro AUC   {metadata['metrics']['macro_auc']}")
+    retention = metadata["ablation"]["lungs_removed_retention"]
+    if retention is None:
+        print("  retention   NOT MEASURED -- no ablation supplied, so the served score "
+              "carries no evidence about what it reads")
+    else:
+        print(f"  retention   {retention:.1%} of signal survives with the lungs removed")
+    if metadata["gates"]["skipped"]:
+        print(f"  gates       {', '.join(metadata['gates']['skipped'])} did not run")
     return 0
 
 
