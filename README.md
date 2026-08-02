@@ -99,6 +99,10 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+Or `make up-build`. `make help` lists every shortcut — starting/stopping the
+stack, tailing logs, a shell in either container, exporting trained models,
+and running each test suite the same way CI does.
+
 There is nothing to configure before first run: no database, no migrations, no
 administrator account. Mount `ml/models/serving` and the API has models; leave
 it empty and it starts anyway, reporting that it has none.

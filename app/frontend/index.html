@@ -6,7 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>X-Rays Covide Identifier</title>
   </head>
-  <body className="p-8 bg-gradient min-h-screen">
+  <body>
+    <!-- `className` is a React prop name, not an HTML attribute; the browser
+         never applied p-8/bg-gradient/min-h-screen here. App.tsx's own root
+         element already owns the page background and min-height, so nothing
+         needs to move here -- just removed the dead markup. -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

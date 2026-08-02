@@ -45,11 +45,22 @@ def describe(checkpoint: Checkpoint, ablation: list[dict] | None = None) -> dict
     anything, and a response builder reaching for one field will reach for the
     easy one.
     """
+    import torch
+
     test = checkpoint.metrics.get("test", {})
     removed = _find(ablation, "lungs removed")
     kept = _find(ablation, "lungs only")
     return {
         "export_version": EXPORT_VERSION,
+        # Not decoration: torch.export's on-disk format is not stable across
+        # torch releases, and this project trains and serves with two
+        # deliberately different torch installs -- CUDA for training, CPU for
+        # serving. Recorded here so the serving side can name the mismatch
+        # instead of failing with an opaque zipfile error when the two drift,
+        # which they will, because ml's torch is pinned unbounded on purpose
+        # (see ml/pyproject.toml) to let CUDA-arch matching win over version
+        # pinning.
+        "torch_version": torch.__version__,
         "classes": list(checkpoint.model.classes),
         "temperature": checkpoint.temperature,
         "spec": checkpoint.spec.to_dict(),

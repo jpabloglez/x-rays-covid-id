@@ -83,6 +83,15 @@ An empty or missing `MODEL_DIR` is not a startup failure: the service runs,
 `/health` reports `inference_available: false`, and `/predict` answers 503. A
 single corrupt export is skipped and logged rather than taking the others down.
 
+**`setup/requirements.txt`'s torch version must match `ml/.venv`'s.**
+`torch.export`'s on-disk format is not guaranteed compatible across releases,
+and this project deliberately runs two different torch installs -- CUDA for
+training, CPU for serving. ml's torch is pinned unbounded on purpose (CUDA-arch
+matching wins over version pinning there), so the two *will* drift over time.
+A mismatch fails with a message naming both versions rather than an opaque
+zipfile error, but the fix is to bump the pin and re-export, not to read the
+message and move on.
+
 ## No Django, and no accounts
 
 The Django project is gone: `files` was ported to `api/storage.py`, and

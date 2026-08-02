@@ -130,3 +130,16 @@ def test_describe_survives_a_checkpoint_with_no_metrics():
     described = describe(bare)
     assert described["metrics"]["macro_auc"] is None
     assert described["gates"]["skipped"] == []
+
+
+def test_the_exporting_torch_version_is_recorded(checkpoint_dir, tmp_path):
+    """Not decoration. Training and serving deliberately run two different
+    torch installs (CUDA for training, CPU for serving), ml's torch is pinned
+    unbounded on purpose so CUDA-arch matching wins over version pinning, and
+    torch.export's on-disk format is not stable across releases. Without this,
+    a version drift between the two fails as an opaque zipfile error with no
+    hint of the actual cause."""
+    import torch
+
+    metadata = export(checkpoint_dir, tmp_path / "m.pt2")
+    assert metadata["torch_version"] == torch.__version__
