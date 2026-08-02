@@ -12,7 +12,27 @@ __pycache__
 .pytest_cache
 .ruff_cache
 
-# Local state that must never be baked into an image
+# Local state that must never be baked into an image.
+#
+# Patterns match from the context root, so `data/` alone does not exclude
+# `ml/data/`. Every path is spelled out for that reason: the backend image
+# copies the whole `ml` directory, and without these it swallowed a 6.8 GB CUDA
+# virtualenv and came out at 32.6 GB on a 251 GB disk.
 data/
+ml/data/
+ml/models/
+ml/reports/
+ml/.venv/
+.venv/
+**/.venv/
+**/*.egg-info
+
+# The corpora. Tens of gigabytes, licensed against redistribution, and needed
+# only to train -- never to serve. Excluded from the build context and not just
+# from the image, because the daemon receives the whole context whether a COPY
+# reads it or not, and 25 GB of radiographs made one build run for an hour
+# before it ran the disk out.
+datasets/
+
 *.sqlite3
 *.log

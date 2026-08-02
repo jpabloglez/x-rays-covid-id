@@ -10,10 +10,16 @@ WORKDIR /var/www/app
 COPY ./setup/requirements.txt /var/www/app/requirements.txt
 COPY ./ml /var/www/app/ml
 
-# ADD ./app /var/www/app
-
 RUN pip install -U pip
 RUN pip install --no-cache-dir -r requirements.txt
+
+# The application source. Compose overrides this directory with a bind mount
+# for local hot-reload, so this COPY was never exercised there and the image
+# built successfully with an empty api/ -- it only ran because the host
+# directory was always present to paper over it. Any environment without that
+# exact bind mount (a plain `docker run`, a registry pull, a real deployment)
+# got `ModuleNotFoundError: No module named 'api'` at container start.
+COPY ./app/backend /var/www/app/backend
 
 # Change www-data user to match the host system UID and GID and chown www directory
 RUN usermod --non-unique --uid 1000 www-data \

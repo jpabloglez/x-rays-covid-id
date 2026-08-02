@@ -109,6 +109,72 @@ jobs:
         working-directory: app/frontend
         run: npm run build
 
+  docker:
+    # Neither Dockerfile was ever built in CI, and both had defects that only
+    # a real build and a real container start could catch: an unfiltered
+    # .dockerignore turned a 34 GB build context into a 32.6 GB image, and the
+    # application COPY had been commented out since the FastAPI migration.
+    # `docker compose up` never noticed the second one, because compose's own
+    # bind mount papers over an empty directory inside the image -- so this
+    # runs the image bare, the way a registry pull or a real deployment would.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the backend image
+        run: docker compose build backend-xrays
+
+      - name: The image is not bloated with training dependencies
+        # backend-xrays only runs a frozen export; it never trains one. 3 GB
+        # is generous headroom over the measured 2.04 GB, and catching a
+        # regression here is cheaper than finding it during a build that runs
+        # for an hour and then fails on disk space, as the original one did.
+        #
+        # `docker image inspect --format '{{.Size}}'` disagrees with what
+        # `docker images` shows once buildx attaches a provenance attestation
+        # -- it reported 421 MB against the 2.04 GB every other view of the
+        # same image agreed on. Parsed from `docker images` instead, which is
+        # the number a human -- and this check -- actually means to assert on.
+        run: |
+          size_str=$(docker images backend-xrays:latest --format '{{.Size}}')
+          echo "backend-xrays: $size_str"
+          python3 -c "
+          import re, sys
+          match = re.match(r'([\d.]+)\s*([KMGT]?B)', '$size_str')
+          value, unit = float(match.group(1)), match.group(2)
+          multiplier = {'B': 1, 'KB': 1024, 'MB': 1024**2, 'GB': 1024**3, 'TB': 1024**4}[unit]
+          size = value * multiplier
+          if size > 3 * 1024**3:
+              print(f'::error::backend-xrays is {size / 1024**3:.1f} GB, expected under 3 GB. '
+                    'Check .dockerignore for a build-context regression.')
+              sys.exit(1)
+          "
+
+      - name: The image runs standalone, with no bind mount and no models
+        run: |
+          docker run -d --name backend-ci -p 18080:3080 -e MODEL_DIR=/nonexistent backend-xrays:latest
+          ok=""
+          for _ in $(seq 1 20); do
+            if curl -sf http://localhost:18080/health > /tmp/health.json; then ok=1; break; fi
+            sleep 1
+          done
+          docker logs backend-ci
+          if [ -z "$ok" ]; then
+            echo "::error::backend-xrays never answered /health"
+            exit 1
+          fi
+          python3 -c "
+          import json
+          body = json.load(open('/tmp/health.json'))
+          assert body['status'] == 'ok', body
+          assert body['inference_available'] is False, body
+          print('health check passed:', body)
+          "
+          docker rm -f backend-ci
+
+      - name: Build the frontend image
+        run: docker compose build frontend-xrays
+
   secrets:
     runs-on: ubuntu-latest
     steps:

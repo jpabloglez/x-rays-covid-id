@@ -12,6 +12,7 @@ MODEL_DIR=../../ml/models/serving uvicorn api.main:app --reload --port 3080
 | --- | --- |
 | `GET /health` | liveness, and whether any model actually loaded |
 | `GET /models` | what is loaded and what each one is worth, without an image |
+|  | — the UI's report view is built entirely from this |
 | `POST /files/` | validate and store an upload, content-addressed |
 | `POST /predict/` | score with every loaded model, with the evidence attached |
 
@@ -57,6 +58,15 @@ executor over a resize that diverged from the reference by 229 times the
 quantisation bound; a third implementation in the request path would be the
 same mistake with a worse blast radius. `test_preprocessing_matches_the_training_reference`
 pins it.
+
+## `/models` owns its own shape
+
+The gate object is normalised before it goes out: `blocking`, `acknowledged`,
+`skipped` and `findings` are always present, whatever the stored metadata
+contains. Exports made before a field existed simply omit it — Track 1 predates
+`findings` — and a client following the documented shape crashed on the older
+file. Filling the gaps here rather than in every consumer is the endpoint
+keeping a contract it published.
 
 ## Getting models onto disk
 
