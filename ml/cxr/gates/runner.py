@@ -31,6 +31,7 @@ from cxr.gates.g1_patient import external_is_source_pure, patient_disjointness
 from cxr.gates.g2_duplicates import near_duplicate_disjointness
 from cxr.gates.g3_source_probe import source_confound_probe
 from cxr.gates.g4_class_source import class_source_independence
+from cxr.gates.g5_scanner import scanner_independence
 from cxr.hashing import DEFAULT_THRESHOLD_BITS
 
 
@@ -73,6 +74,10 @@ def run_all(
     results.append(
         class_source_independence(frame, splits, threshold=cramers_v_threshold)
     )
+    # G5 is what G4 cannot answer on a single-source corpus. Source constant
+    # does not mean acquisition constant, and the device is the signature that
+    # remains once the collection stops varying.
+    results.append(scanner_independence(frame, threshold=cramers_v_threshold))
     return results
 
 

@@ -1,22 +1,7 @@
+# No database. The API holds no state between requests: an upload is written
+# to disk under the hash of its own bytes, scored, and forgotten. Nothing about
+# who asked is recorded, so there is nothing to store and nothing to leak.
 services:
-
-  # Not yet used by the backend, which is still on SQLite. Kept so the Phase B
-  # migration to FastAPI + SQLAlchemy has a database waiting for it.
-  db-xrays:
-    image: postgres:16
-    container_name: db-xrays
-    ports:
-      - 5444:5432
-    environment:
-      # No fallback values: a credential written here is a credential in the
-      # repository. Compose refuses to start the service until .env supplies one.
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?generate one, see .env.example}
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    networks:
-      - app-network
 
   backend-xrays:
     build:
@@ -24,8 +9,6 @@ services:
       dockerfile: ./compose/Dockerfile.backend
     container_name: backend-xrays
     image: backend-xrays
-    depends_on:
-      - db-xrays
     env_file:
       - path: .env
         required: false
@@ -71,7 +54,6 @@ services:
 
 volumes:
   media_volume:
-  db_data:
 
 networks:
   app-network:

@@ -11,6 +11,12 @@ from. Retrain within a single hospital network, where positives and negatives
 share scanners and period, and the score falls to **0.7460** with 83.7% still
 surviving the same ablation.
 
+Then measure what Track 2 is actually reading, and it gets worse: **a lookup
+table that only knows which x-ray machine took the image — and never looks at
+the image — scores 0.7640 AUC against the network's 0.7460** on the same test
+split. Track 2 escaped the confound it was built to escape, and was defeated
+by the next one down.
+
 The gap between those numbers is the deliverable.
 **[`ml/RESULTS.md`](ml/RESULTS.md) is the write-up.**
 
@@ -19,7 +25,7 @@ The gap between those numbers is the deliverable.
 | Area | State |
 | --- | --- |
 | Image upload and display | Working |
-| Dataset assembly, leakage gates | Working — five gates, measured values not pass/fail |
+| Dataset assembly, leakage gates | Working — six gates, measured values not pass/fail |
 | Training, calibration, lung ablation | Working — two tracks trained and ablated |
 | Inference API | Working — FastAPI, `POST /predict/` scores with both models |
 | User accounts and organisations | Models only; the API was removed (see below) |
@@ -79,24 +85,16 @@ A migration of the backend to FastAPI is planned; the Postgres service in
 git clone https://github.com/jpabloglez/x-rays-covid-id.git
 cd x-rays-covid-id
 cp .env.example .env
-printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" >> .env
 docker compose up -d --build
 ```
 
-No credential in this repository has a default value. `POSTGRES_PASSWORD` is
-unset in `.env.example` on purpose, and compose refuses to start the database
-service until you generate one.
+There is nothing to configure before first run: no database, no migrations, no
+administrator account. Mount `ml/models/serving` and the API has models; leave
+it empty and it starts anyway, reporting that it has none.
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:3080
-- Django admin: http://localhost:3080/admin/
-
-Apply migrations and create an administrator on first run:
-
-```sh
-docker compose exec backend-xrays python manage.py migrate
-docker compose exec backend-xrays python manage.py createsuperuser
-```
+- API docs: http://localhost:3080/docs
 
 The frontend proxies `/api` and `/media` to the backend, so the browser stays
 same-origin and no CORS configuration is needed for local development.
@@ -107,8 +105,7 @@ same-origin and no CORS configuration is needed for local development.
 python -m venv .venv && source .venv/bin/activate
 pip install -r setup/requirements-dev.txt
 cd app/backend
-DJANGO_DEBUG=true python manage.py migrate
-DJANGO_DEBUG=true python manage.py runserver 0.0.0.0:3080
+MODEL_DIR=../../ml/models/serving uvicorn api.main:app --reload --port 3080
 ```
 
 ```sh
@@ -118,9 +115,9 @@ cd app/frontend && npm ci && npm run dev
 ## Configuration
 
 Every environment-dependent value is read from the environment; `.env.example`
-documents the full list. `DJANGO_SECRET_KEY` is mandatory whenever
-`DJANGO_DEBUG` is off — the app refuses to start without it rather than falling
-back to a key committed to the repository.
+documents the full list, and none of it is secret. The API keeps no accounts,
+no sessions and no database, so there is no signing key to protect and no
+credentials to rotate.
 
 ## Tests and linting
 
@@ -133,21 +130,30 @@ ruff check .
 ## Layout
 
 ```
-app/backend/    Django project: files (upload) and users (models only)
+app/backend/    FastAPI service: upload, and inference over both tracks
 app/frontend/   React + Vite single-page app
 compose/        Dockerfiles for the backend and frontend images
 setup/          Python requirements
 ```
 
-## Removed user API
+## No accounts, by decision
 
-`users/` previously exposed list, retrieve, update and delete endpoints for
-every account with no authentication, backed by permission classes that raised
-`UnboundLocalError` before they could deny anything. Those views, URLs,
-serializers and permissions have been deleted. The models remain, serving
-nothing, as the schema reference for the rebuild — which is a rebuild rather
-than a port: real password hashing and authorisation on every route that
-touches an account.
+The original repository carried a user system: accounts with a five-level role
+field, organisations with billing addresses, profiles with phone numbers and
+avatars. Its API exposed list, retrieve, update and delete over every account
+with no authentication at all, behind permission classes that raised
+`UnboundLocalError` before they could deny anything. Phase A deleted the views;
+this branch deleted the rest.
+
+It was not replaced. Nothing this project does needs to know who is asking —
+you upload a radiograph, it is scored, and the answer comes back with its
+confound profile attached. Accounts would have added a password store, a
+personal-data surface and a login wall in front of the one thing worth looking
+at, in exchange for nothing.
+
+So there is no database, no session, no signing key, and no record of who
+uploaded what. An application that holds no personal data cannot leak personal
+data, which is a stronger guarantee than any amount of careful handling.
 
 ## License
 

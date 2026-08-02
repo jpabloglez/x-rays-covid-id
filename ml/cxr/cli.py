@@ -125,6 +125,9 @@ def main(argv: list[str] | None = None) -> int:
     export_parser.add_argument("--out", required=True, type=Path)
     export_parser.add_argument("--ablation", type=Path, default=None,
                                help="ablation.json, so retention travels with the weights")
+    export_parser.add_argument("--gates", type=Path, default=None,
+                               help="gates.json to embed, overriding the one recorded at "
+                                    "training time; use when a gate has been added since")
 
     ablate_parser = subparsers.add_parser(
         "ablate", help="score a checkpoint with the lung fields removed, and kept"
@@ -271,7 +274,7 @@ def _cache(args: argparse.Namespace) -> int:
 def _export(args: argparse.Namespace) -> int:
     from cxr.export import export
 
-    metadata = export(args.checkpoint, args.out, ablation=args.ablation)
+    metadata = export(args.checkpoint, args.out, ablation=args.ablation, gates=args.gates)
     size = args.out.stat().st_size / 1e6
     print(f"{args.checkpoint} -> {args.out} ({size:.1f} MB)")
     print(f"  classes     {', '.join(metadata['classes'])}")
@@ -282,6 +285,10 @@ def _export(args: argparse.Namespace) -> int:
               "carries no evidence about what it reads")
     else:
         print(f"  retention   {retention:.1%} of signal survives with the lungs removed")
+    if metadata["gates"]["blocking"]:
+        print(f"  gates       BLOCKING: {', '.join(metadata['gates']['blocking'])}")
+    if metadata["gates"]["acknowledged"]:
+        print(f"  gates       acknowledged: {', '.join(metadata['gates']['acknowledged'])}")
     if metadata["gates"]["skipped"]:
         print(f"  gates       {', '.join(metadata['gates']['skipped'])} did not run")
     return 0

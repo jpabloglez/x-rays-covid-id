@@ -4,6 +4,10 @@ Two models, trained by the same code on the same day, differing only in what
 corpus they were given. Track 1 scores **0.9925**. Track 2 scores **0.7460**.
 Neither is a COVID detector, and the reason is the point of this document.
 
+The sharpest single result is at the bottom of the confounds section: **a
+lookup table that reads only which x-ray machine took the image, and never
+looks at the image, beats the trained network on Track 2's own test split.**
+
 All numbers below are measured, on held-out test splits, with the commands that
 produced them recorded. Nothing here is an estimate.
 
@@ -62,6 +66,7 @@ with that caveat attached.
 | G2 near-duplicate disjointness | pass (after dedupe) | pass |
 | G3 source-confound probe | **fail — 0.795**, acknowledged | skipped |
 | G4 class–source independence | **fail**, acknowledged | skipped |
+| G5 scanner–class independence | not measured | **fail — 0.474**, acknowledged |
 
 **G3 = 0.795** means a probe distinguishes the two collections from 32×32
 thumbnails four times in five. That signal is free to any network trained on
@@ -134,11 +139,63 @@ Measured at image level the sex association reads 0.198, but that is inflated
 because COVID patients receive more follow-up films. Per patient is the honest
 figure.
 
-**Not yet measured: the scanner.** Within one collection, source is constant
-and the acquisition signature that remains is the individual device. The
-adapter preserves `Manufacturer` and `Manufacturer's Model Name` for exactly
-this probe. Until it is run, the most likely explanation for Track 2's 83.7%
-extra-pulmonary signal is unnamed.
+### The scanner, which turned out to be the answer
+
+Within one collection, source is constant and the acquisition signature that
+remains is the individual device. Measuring it settled what Track 2's 83.7%
+extra-pulmonary signal was.
+
+**Cramér's V = 0.474** between scanner model and class, over 42 devices —
+above the 0.40 threshold, so G5 fails and blocks. Bias-corrected, because with
+that many thin levels an uncorrected V rises with the level count whether or
+not any association exists.
+
+COVID rate by device, corpus-wide, for devices with 40 or more films:
+
+| device | films | covid |
+| --- | ---: | ---: |
+| CR 85 | 60 | 85% |
+| CS-7 | 68 | 76% |
+| 0862 | 48 | 73% |
+| DX-G | 60 | 67% |
+| ACCORD DR | 42 | 55% |
+| DR 14e C - 1200ms | 120 | 53% |
+| DRX-1 | 94 | 46% |
+| Varian_4343R | 44 | 43% |
+| DigitalDiagnost | 68 | 35% |
+| SIEMENS FD-X | 81 | 33% |
+| DX-M | 51 | 29% |
+| *unrecorded* | 219 | 20% |
+| DRX-Evolution | 79 | 19% |
+| PCR Eleva | 43 | 19% |
+| 3543EZE | 43 | 12% |
+
+Ordinary hospital logistics rather than exotic leakage: a portable unit is
+wheeled to the COVID ward, the radiology suite takes scheduled outpatients.
+Different detectors, different processing, different noise. BIMCV's
+single-source purity does nothing about it.
+
+**A lookup table beats the model.** Estimate P(covid | device) on `train`,
+apply it to `test`, and compare against the network scored on the same 293
+images:
+
+| | AUC | balanced accuracy |
+| --- | --- | --- |
+| **Scanner lookup**, never sees the image | **0.7640** | **0.7522** |
+| **DenseNet-121**, 790 training images | 0.7460 | 0.6479 |
+
+Only 4 of 293 test rows sit on a device unseen in training, so this is not an
+artefact of the fallback.
+
+**What that means for Track 2's number.** 0.7460 should not be read as "COVID
+detection at 0.75". Track 2 was built to escape source confounding and it
+succeeded — G4 genuinely cannot associate class with collection. It then
+walked into the confound one level down, and measured the scanner less
+efficiently than a lookup table would.
+
+Rows with no device recorded are kept as their own level rather than dropped.
+Which images lack metadata is itself an acquisition signature, and 14.4% of
+the corpus is a large thing to delete on the way to a reassuring number.
 
 ---
 
@@ -173,7 +230,12 @@ Near-identical. A segmenter failing on the target would show up here first.
 - **The ablation covers one collection.** It cannot separate anatomy from
   BIMCV's own acquisition signature; only a second single-source corpus could.
 - **G3 never ran for Track 2**, so the within-source pixel confound is
-  unquantified.
+  unquantified. G5 measures the recorded device, which is not the same thing:
+  a probe on pixels could find acquisition signature that no metadata field
+  names.
+- **14.4% of BIMCV rows record no device.** They are kept as their own level,
+  which is the conservative choice, but a large unlabelled group limits how
+  precisely the scanner association can be pinned.
 - **Neither model has an external validation set.** G1b skipped in both.
 - **`label` is molecular status, not the radiologist's reading.** The two
   disagree on roughly a fifth of BIMCV: 13.8% of molecularly positive studies
@@ -184,10 +246,16 @@ Near-identical. A segmenter failing on the target would show up here first.
 
 ## Neither model is a diagnostic device
 
-Track 1 reports 0.9925 and reads the collection. Track 2 reports 0.7460 and
-reads mostly outside the lungs. Both are research artefacts produced to
-quantify a documented failure mode, and the gap between them is the result —
-not either number on its own.
+Track 1 reports 0.9925 and reads the collection. Track 2 reports 0.7460 and is
+beaten, on its own test split, by a lookup table that reads only which machine
+took the image. Both are research artefacts produced to quantify a documented
+failure mode, and the gap between them is the result — not either number on
+its own.
+
+Track 2 is the more interesting failure. It was designed to remove the
+confound Track 1 has, it removed exactly that confound, and it was defeated by
+the next one down. Escaping one shortcut is not the same as reading the
+anatomy.
 
 DeGrave, Janizek & Lee (2021) showed published COVID classifiers doing exactly
 what Track 1 does here. Roberts *et al.* (2021) reviewed 415 papers and found

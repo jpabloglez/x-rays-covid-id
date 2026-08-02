@@ -73,17 +73,21 @@ An empty or missing `MODEL_DIR` is not a startup failure: the service runs,
 `/health` reports `inference_available: false`, and `/predict` answers 503. A
 single corrupt export is skipped and logged rather than taking the others down.
 
-## What is still Django
+## No Django, and no accounts
 
-`users/` and `backend/settings.py` remain in the tree and **serve nothing**.
-`backend/urls.py` routes to no view, Django is not in `requirements.txt`, and
-compose runs uvicorn. They are kept only as the schema reference for the
-authentication port in XRAYS-10, which will rebuild that surface here — the old
-DRF views were deleted in Phase A because they exposed unauthenticated
-list/update/delete over every account.
+The Django project is gone: `files` was ported to `api/storage.py`, and
+`users`, `settings.py` and `manage.py` were deleted outright rather than
+ported. There is no database and no ORM.
 
-The Django `files` app is gone: it was ported to `api/storage.py` with its
-security properties intact, and its tests came with it. The client-supplied
-filename still never reaches the filesystem — names are the SHA-256 of the
-bytes plus an extension from a fixed map, so a request cannot choose where its
-file lands or smuggle a non-image through by naming it `.png`.
+The upload path kept its security properties through the port, because they
+were the point of that code. The client-supplied filename still never reaches
+the filesystem — names are the SHA-256 of the bytes plus an extension from a
+fixed map, so a request cannot choose where its file lands or smuggle a
+non-image through by naming it `.png`. Those tests came across with it.
+
+Accounts were not rebuilt. Nothing here needs to know who is asking: an upload
+is written under the hash of its own bytes, scored, and forgotten. Adding
+accounts would have meant a password store and a personal-data surface in
+exchange for nothing this project does. The service holds no state between
+requests, so there is no signing key, no session, and no record of who
+uploaded what.
