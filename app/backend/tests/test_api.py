@@ -90,6 +90,10 @@ def test_a_valid_png_is_stored_under_a_content_addressed_name(tmp_path):
     # The client's filename never reaches the filesystem.
     assert "chest" not in url
 
+    # Not just well-formed -- fetchable. A URL string and a servable file are
+    # different claims, and only this checks the second one.
+    assert client.get(url).status_code == 200
+
 
 def test_the_same_bytes_land_on_the_same_name_twice(tmp_path):
     client = _client(tmp_path)
@@ -158,6 +162,25 @@ def test_predict_scores_the_image_and_attaches_the_evidence(tmp_path, exported):
     )
     assert prediction["lungs_removed_retention"] == pytest.approx(0.837)
     assert prediction["macro_auc"] == pytest.approx(0.746)
+
+
+def test_the_returned_imageurl_actually_resolves(tmp_path, exported):
+    """The gap the JSON-shape tests above cannot see: `imageUrl` being present
+    and well-formed is not the same as the thing it points at being fetchable.
+    The FastAPI migration never carried over Django's static(MEDIA_URL, ...),
+    so every imageUrl this app ever returned was a dead link -- caught live, by
+    opening the running app in a browser, not by any test that only checked
+    the response body.
+    """
+    payload = _png()
+    client = _client(tmp_path, model_dir=exported)
+    response = client.post("/predict/", files={"image": ("c.png", payload, "image/png")})
+    image_url = response.json()["imageUrl"]
+
+    served = client.get(image_url)
+    assert served.status_code == 200
+    assert served.headers["content-type"] == "image/png"
+    assert served.content == payload
 
 
 def test_a_high_retention_is_stated_in_words_not_just_a_number(tmp_path, exported):

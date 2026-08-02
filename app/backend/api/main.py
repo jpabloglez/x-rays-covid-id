@@ -20,6 +20,7 @@ import logging
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api import inference, storage
@@ -102,6 +103,25 @@ def create_app(config: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
+    )
+
+    # /predict and /files return `imageUrl` pointing here, but nothing served
+    # it: the FastAPI migration never carried over Django's
+    # `static(MEDIA_URL, document_root=MEDIA_ROOT)`, so every imageUrl this
+    # app has ever returned has been a dead link. Found live, by actually
+    # opening the app rather than only asserting the JSON shape -- the tests
+    # checked what the response said, never whether the thing it pointed at
+    # was reachable.
+    #
+    # `check_dir=False`: a fresh deployment with no uploads yet has no media
+    # directory, and StaticFiles refuses to mount over a missing one by
+    # default. mkdir happens anyway, so the common case never needs the flag,
+    # but startup must not depend on a request having already happened.
+    config.media_root.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        config.media_url.rstrip("/") or "/media",
+        StaticFiles(directory=str(config.media_root), check_dir=False),
+        name="media",
     )
 
     def _models() -> dict[str, inference.LoadedModel]:
