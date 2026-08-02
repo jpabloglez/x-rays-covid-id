@@ -21,16 +21,33 @@ RUN pip install --no-cache-dir -r requirements.txt
 # got `ModuleNotFoundError: No module named 'api'` at container start.
 COPY ./app/backend /var/www/app/backend
 
-# Change www-data user to match the host system UID and GID and chown www directory
+# Change www-data user to match the host system UID and GID, and chown the
+# image's own copy of /var/www. This never touches a volume mounted at runtime
+# -- docker-entrypoint.sh handles that, on every boot, because a volume that
+# already existed before this chown ran keeps whatever ownership it had.
 RUN usermod --non-unique --uid 1000 www-data \
   && groupmod --non-unique --gid 1000 www-data \
   && chown -R www-data:www-data /var/www
 
-USER www-data
+# gosu, not `su`: dropping from root to www-data after the entrypoint's chown
+# needs to replace the process and forward signals correctly (so a container
+# stop actually reaches uvicorn), which is exactly what gosu exists for and
+# `su -c` is known to get subtly wrong.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gosu \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY ./compose/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# No USER directive: the entrypoint starts as root on purpose, to fix a stale
+# volume's ownership, and drops to www-data itself before anything else runs.
 
 WORKDIR /var/www/app/backend
 
 EXPOSE 3080
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 # uvicorn, not manage.py: the HTTP surface is FastAPI as of XRAYS-09.
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3080"]
