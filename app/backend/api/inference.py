@@ -25,7 +25,6 @@ import json
 import logging
 import zipfile
 from dataclasses import dataclass
-from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -184,13 +183,24 @@ def load(path: Path, track: str) -> LoadedModel:
     )
 
 
-@lru_cache(maxsize=1)
+_loaded: dict[Path, tuple[float, LoadedModel]] = {}
+
+
 def registry(directory: str) -> dict[str, LoadedModel]:
     """Every export in `directory`, keyed by filename stem.
 
-    Cached because loading is seconds and the files do not change under a
-    running process. A missing directory is not an error here -- the service
-    starts, reports no models, and the endpoints say so.
+    Re-scans the directory on every call rather than caching the whole result
+    once. The documented workflow is to start the stack and *then* run
+    `cxr export` into the mounted directory -- a cache keyed only on the
+    directory path would freeze in whatever it saw on the first request,
+    which for that workflow is always "nothing," permanently, until the
+    process restarts. That was a real bug here, not a hypothetical one.
+
+    What is still cached is each individual model, by path and mtime: a
+    directory listing plus a handful of stat() calls is microseconds, so
+    nothing is lost by doing it every time, but re-loading and re-tracing a
+    model that has not changed would be. A missing directory is not an error
+    -- the service starts, reports no models, and the endpoints say so.
     """
     root = Path(directory)
     if not root.is_dir():
@@ -198,13 +208,30 @@ def registry(directory: str) -> dict[str, LoadedModel]:
         return {}
 
     models: dict[str, LoadedModel] = {}
+    seen: set[Path] = set()
     for path in sorted(root.glob("*.pt2")):
+        seen.add(path)
+        mtime = path.stat().st_mtime
+        cached = _loaded.get(path)
+        if cached is not None and cached[0] == mtime:
+            models[path.stem] = cached[1]
+            continue
         try:
-            models[path.stem] = load(path, path.stem)
+            loaded = load(path, path.stem)
         except (ModelUnavailable, OSError, KeyError, ValueError) as error:
             # One bad export must not take down the others; the service reports
             # what it has rather than failing to start.
             logger.error("Skipping %s: %s", path.name, error)
+            _loaded.pop(path, None)
+            continue
+        _loaded[path] = (mtime, loaded)
+        models[path.stem] = loaded
+
+    # Forget anything that's no longer on disk, so a removed export can't
+    # resurrect itself from a stale cache entry later.
+    for stale in set(_loaded) - seen:
+        _loaded.pop(stale, None)
+
     if not models:
         logger.warning("No usable exports in %s", root)
     return models

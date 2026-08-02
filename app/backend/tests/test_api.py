@@ -74,10 +74,6 @@ def exported(tmp_path):
 
     serving = tmp_path / "serving"
     export(directory, serving / "track2.pt2", ablation=ablation)
-    # Clear the process-wide cache so each test sees its own directory.
-    from api import inference
-
-    inference.registry.cache_clear()
     return serving
 
 
@@ -212,14 +208,11 @@ def test_models_endpoint_describes_without_an_image(tmp_path, exported):
 
 def test_a_corrupt_export_is_skipped_rather_than_taking_the_service_down(tmp_path):
     """One bad file must not stop the others being served."""
-    from api import inference
-
     serving = tmp_path / "serving"
     serving.mkdir()
     with zipfile.ZipFile(serving / "broken.pt2", "w") as archive:
         archive.writestr("nope.txt", "not a model")
 
-    inference.registry.cache_clear()
     body = _client(tmp_path, model_dir=serving).get("/health").json()
     assert body["status"] == "ok"
     assert body["models"] == []
@@ -328,3 +321,59 @@ def test_models_endpoint_fills_in_gate_keys_an_older_export_omits(tmp_path, monk
         "skipped": [],
         "findings": {},
     }
+
+
+def test_a_model_exported_after_the_server_started_is_picked_up_without_a_restart(tmp_path):
+    """The bug this test exists to catch: the documented workflow is to start
+    the stack and *then* run `cxr export` into the mounted directory. A
+    registry cached once, keyed only on the directory path, would see an
+    empty directory on the very first request and serve "no models" forever
+    -- the file appearing later never gets noticed, because nothing ever asks
+    the directory again. It is not enough for a fresh process to find models
+    that were already there; a long-running one has to notice new ones too.
+    """
+    pytest.importorskip("timm")
+    import torch
+    from cxr.export import export
+    from cxr.models import Checkpoint, ModelConfig, build_model
+    from cxr.preprocessing import PreprocessingSpec
+
+    serving = tmp_path / "serving"
+    client = _client(tmp_path, model_dir=serving)
+
+    # First request: the directory does not even exist yet.
+    assert client.get("/health").json()["inference_available"] is False
+
+    # A model is exported into it after that request, exactly as `make
+    # export-models` does against an already-running stack.
+    spec = PreprocessingSpec(target_size=32)
+    config = ModelConfig(backbone="resnet18", pretrained=False, classes=("non_covid", "covid"))
+    checkpoint = Checkpoint(model=config, spec=spec, temperature=1.0)
+    checkpoint_dir = tmp_path / "ckpt"
+    checkpoint.write(checkpoint_dir, state_dict=build_model(config).state_dict())
+    torch.save(build_model(config).state_dict(), checkpoint_dir / "weights.pt")
+    export(checkpoint_dir, serving / "track2.pt2")
+
+    # No restart, no cache-busting call -- the next request must see it.
+    body = client.get("/health").json()
+    assert body["inference_available"] is True
+    assert body["models"] == ["track2"]
+
+
+def test_an_unchanged_model_is_not_reloaded_on_every_request(tmp_path, exported, monkeypatch):
+    """The other half of the fix: re-scanning the directory must not mean
+    re-loading and re-tracing every model on every single request. Unchanged
+    files should come back from the per-file cache."""
+    from api import inference
+
+    client = _client(tmp_path, model_dir=exported)
+    client.get("/health")
+
+    original_load = inference.load
+    calls = []
+    monkeypatch.setattr(
+        inference, "load", lambda *a, **k: calls.append(1) or original_load(*a, **k)
+    )
+    client.get("/health")
+    client.get("/health")
+    assert calls == []
