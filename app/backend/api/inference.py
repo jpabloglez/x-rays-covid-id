@@ -90,10 +90,21 @@ class Prediction:
             )
 
         gates = self.metadata.get("gates", {})
-        if gates.get("acknowledged"):
+        findings = gates.get("findings", {})
+        for gate in gates.get("acknowledged", []):
+            # What the gate found, not just that it failed. "G5 failed" tells a
+            # reader something is wrong without telling them what, which is
+            # close to telling them nothing.
+            #
+            # This also used to claim the failure was "acknowledged before
+            # training". Not knowable from here, and false for Track 2: G5 did
+            # not exist when that model was trained and was measured against it
+            # afterwards.
+            detail = findings.get(gate)
             notes.append(
-                f"Gates {', '.join(gates['acknowledged'])} failed and were acknowledged as "
-                "known confounds before training."
+                f"Gate {gate} fails and is acknowledged: {detail}"
+                if detail
+                else f"Gate {gate} fails and is acknowledged as a known confound."
             )
         if gates.get("skipped"):
             notes.append(

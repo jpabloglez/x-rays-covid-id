@@ -147,6 +147,12 @@ class BimcvCovid19(Source):
             "age": _map_age(row.get("Patient's Age (00101010)")),
             "sex": _map_sex(row.get("Patient's Sex (00100040)")),
             "mask_path": None,
+            # Persisted, not just read. Source is constant across this
+            # collection, so the scanner is the acquisition confound that
+            # remains, and a probe cannot be run against a field that was
+            # loaded and thrown away.
+            "manufacturer": _clean(row.get("Manufacturer (00080070)")),
+            "scanner_model": _clean(row.get("Manufacturer's Model Name (00081090)")),
             **self.hash_record(image, relative),
         }
 
@@ -197,3 +203,9 @@ def _map_age(value: object) -> float | None:
 def _map_sex(value: object) -> str:
     text = str(value or "").strip().upper()
     return text if text in {Sex.F, Sex.M} else str(Sex.UNKNOWN)
+
+
+def _clean(value: object) -> str | None:
+    """A trimmed string, or None for the many spellings of "not recorded"."""
+    text = str(value or "").strip()
+    return None if not text or text.lower() in {"n/a", "na", "none", "unknown"} else text

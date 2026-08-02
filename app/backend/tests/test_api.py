@@ -262,3 +262,38 @@ def test_settings_read_the_environment_when_built_not_when_imported(monkeypatch)
     assert built.media_url == "/somewhere-else/"
     assert built.model_dir == "/opt/models"
     assert built.max_upload_bytes == 1234
+
+
+def test_an_acknowledged_gate_reports_what_it_found(tmp_path):
+    """"G5 failed" tells a reader something is wrong without telling them what.
+
+    It also must not claim the failure was acknowledged *before training*: G5
+    did not exist when Track 2 was trained and was measured against it
+    afterwards, so that phrasing was simply false.
+    """
+    from api.inference import Prediction
+
+    prediction = Prediction(
+        track="track2", classes=["non_covid", "covid"],
+        probabilities={"non_covid": 0.5, "covid": 0.5}, predicted="covid", confidence=0.5,
+        metadata={
+            "gates": {
+                "acknowledged": ["G5"],
+                "findings": {"G5": "Cramer's V 0.474 between scanner_model and class"},
+            }
+        },
+    )
+    caveats = " ".join(prediction.caveats())
+    assert "Cramer's V 0.474" in caveats
+    assert "before training" not in caveats
+
+
+def test_an_acknowledged_gate_with_no_recorded_finding_still_says_so(tmp_path):
+    from api.inference import Prediction
+
+    prediction = Prediction(
+        track="t", classes=["a", "b"], probabilities={"a": 1.0, "b": 0.0},
+        predicted="a", confidence=1.0,
+        metadata={"gates": {"acknowledged": ["G4"], "findings": {}}},
+    )
+    assert "Gate G4 fails and is acknowledged" in " ".join(prediction.caveats())
