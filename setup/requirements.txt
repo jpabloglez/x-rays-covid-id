@@ -15,8 +15,19 @@ numpy==2.1.3
 
 # CPU torch. The GPU build is for training; inference on a single radiograph
 # does not need it, and pulling CUDA into the web image costs gigabytes.
+#
+# This version must match ml/.venv's torch major.minor exactly (check with
+# `ml/.venv/bin/python -c "import torch; print(torch.__version__)"`).
+# torch.export's on-disk format is not guaranteed stable across releases, and
+# ml/pyproject.toml deliberately leaves its own torch unbounded (CUDA-arch
+# matching has to win over version pinning there) -- so this pin WILL go
+# stale the next time someone reinstalls ml/.venv against a newer torch.
+# When it does: bump this to match, rebuild the image, and re-export both
+# models. Loading a mismatched export fails with a clear error naming both
+# versions rather than a bare zipfile complaint -- but the fix is still to
+# bump this pin, not to read the message and move on.
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1
+torch==2.13.0
 
 # The research package, for the preprocessing reference and nothing else.
 # Installed without extras so torch stays the CPU wheel pinned above.

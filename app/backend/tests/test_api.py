@@ -377,3 +377,64 @@ def test_an_unchanged_model_is_not_reloaded_on_every_request(tmp_path, exported,
     client.get("/health")
     client.get("/health")
     assert calls == []
+
+
+def test_a_torch_version_mismatch_names_itself_instead_of_a_bare_zipfile_error(
+    tmp_path, monkeypatch
+):
+    """torch.export's on-disk format is not guaranteed stable across releases,
+    and this project runs two different torch installs on purpose -- CUDA for
+    training, CPU for serving -- so the two can drift. Reproducing a real
+    cross-version failure would need two torch installs side by side; here the
+    metadata read is real and only torch.export.load itself is replaced with
+    something that fails the same way ("no item named 'version'").
+    """
+    import torch
+    from api import inference
+
+    path = tmp_path / "mismatched.pt2"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "extra/metadata.json",
+            json.dumps(
+                {
+                    "export_version": inference.SUPPORTED_EXPORT_VERSION,
+                    "torch_version": "1.0.0",
+                    "spec": {},
+                    "classes": ["a", "b"],
+                }
+            ),
+        )
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("no item named 'version' in the archive")
+
+    monkeypatch.setattr(torch.export, "load", _boom)
+
+    with pytest.raises(inference.ModelUnavailable, match=r"exported with torch 1\.0\.0"):
+        inference.load(path, "track1")
+
+
+def test_an_older_export_with_no_recorded_torch_version_still_gets_an_actionable_error(
+    tmp_path, monkeypatch
+):
+    """Exports made before torch_version was recorded must not crash on a
+    missing key -- they get a less specific message, not no message."""
+    import torch
+    from api import inference
+
+    path = tmp_path / "no_version.pt2"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "extra/metadata.json",
+            json.dumps(
+                {"export_version": inference.SUPPORTED_EXPORT_VERSION, "spec": {}, "classes": []}
+            ),
+        )
+
+    monkeypatch.setattr(
+        torch.export, "load", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    with pytest.raises(inference.ModelUnavailable, match="different torch version"):
+        inference.load(path, "track1")

@@ -174,7 +174,32 @@ def load(path: Path, track: str) -> LoadedModel:
             f"{path.name} is export version {version}; this service supports "
             f"{SUPPORTED_EXPORT_VERSION}. Re-export it or upgrade the service."
         )
-    module = torch.export.load(str(path)).module()
+    try:
+        module = torch.export.load(str(path)).module()
+    except Exception as error:
+        # torch.export's on-disk format is not stable across torch releases,
+        # and this project deliberately runs two different installs -- CUDA
+        # for training, CPU for serving -- so the two drift. Without this, the
+        # failure is an opaque zipfile complaint ("no item named 'version' in
+        # the archive") that names a symptom, not the cause. exporting_version
+        # is only present in exports made after it started being recorded;
+        # older ones still get an actionable message, just a less specific one.
+        exporting_version = metadata.get("torch_version")
+        serving_version = torch.__version__
+        if exporting_version and exporting_version != serving_version:
+            raise ModelUnavailable(
+                f"{path.name} was exported with torch {exporting_version}, but this "
+                f"service is running torch {serving_version}. torch.export's archive "
+                "format is not guaranteed compatible across versions -- pin this "
+                "service's torch to match, or re-export with this service's torch, "
+                f"then retry. ({type(error).__name__}: {error})"
+            ) from error
+        raise ModelUnavailable(
+            f"{path.name} failed to load ({type(error).__name__}: {error}). This usually "
+            f"means it was exported with a different torch version than the {serving_version} "
+            "running here -- re-export it with this service's torch, or check what torch "
+            "version produced it."
+        ) from error
     return LoadedModel(
         track=track,
         module=module,
