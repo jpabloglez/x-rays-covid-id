@@ -129,7 +129,17 @@ def create_app(config: Settings | None = None) -> FastAPI:
                     "classes": model.classes,
                     "sources": model.metadata.get("sources", []),
                     "metrics": model.metadata.get("metrics", {}),
-                    "gates": model.metadata.get("gates", {}),
+                    # Normalised rather than passed through. An export made
+                    # before a field existed simply omits it, and a client that
+                    # trusted the documented shape would crash on the older
+                    # file. The contract is this endpoint's to keep.
+                    "gates": {
+                        "blocking": [],
+                        "acknowledged": [],
+                        "skipped": [],
+                        "findings": {},
+                        **model.metadata.get("gates", {}),
+                    },
                     "ablation": model.metadata.get("ablation", {}),
                     "notes": model.metadata.get("notes", ""),
                 }

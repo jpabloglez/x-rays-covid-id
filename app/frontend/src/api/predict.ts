@@ -98,3 +98,65 @@ export function retentionVerdict(retention: number | null): string {
       return `${share} of this model's signal survives with the lung fields blanked out, which rules out one shortcut but not every shortcut.`;
   }
 }
+
+
+// --------------------------------------------------------------- /models
+
+export interface ModelGates {
+  blocking: string[];
+  acknowledged: string[];
+  skipped: string[];
+  /** What each failing gate measured, keyed by gate id. */
+  findings: Record<string, string>;
+}
+
+export interface ModelAblation {
+  lungs_removed_retention: number | null;
+  lungs_only_retention: number | null;
+  images: number | null;
+  interpretation: string | null;
+}
+
+export interface ModelMetrics {
+  macro_auc: number | null;
+  balanced_accuracy: number | null;
+  per_class_auc: Record<string, number>;
+  ece_after_calibration: number | null;
+}
+
+export interface ModelCard {
+  track: string;
+  classes: string[];
+  sources: string[];
+  metrics: ModelMetrics;
+  gates: ModelGates;
+  ablation: ModelAblation;
+  notes: string;
+}
+
+export interface ModelsResponse {
+  disclaimer: string;
+  models: ModelCard[];
+}
+
+/**
+ * What the server actually has loaded.
+ *
+ * The report is built from this rather than from figures typed into the page,
+ * so it cannot describe a model that is not there or quote a score the running
+ * service would not produce. A page that hardcodes its own results is the
+ * stale-claim failure this project keeps finding in its own documentation.
+ */
+export async function fetchModels(): Promise<ModelsResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/models`);
+  } catch {
+    throw new PredictError("Could not reach the server. Is the backend running?", 0);
+  }
+  if (!response.ok) {
+    throw new PredictError("Could not load the model report.", response.status);
+  }
+  const payload = (await response.json()) as Partial<ModelsResponse>;
+  return { disclaimer: payload.disclaimer ?? "", models: payload.models ?? [] };
+}

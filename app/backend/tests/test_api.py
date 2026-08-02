@@ -297,3 +297,34 @@ def test_an_acknowledged_gate_with_no_recorded_finding_still_says_so(tmp_path):
         metadata={"gates": {"acknowledged": ["G4"], "findings": {}}},
     )
     assert "Gate G4 fails and is acknowledged" in " ".join(prediction.caveats())
+
+
+def test_models_endpoint_fills_in_gate_keys_an_older_export_omits(tmp_path, monkeypatch):
+    """An export made before a field existed omits it entirely.
+
+    Track 1 was exported before `findings` was added, so /models returned a
+    gates object without it and a client following the documented shape crashed
+    on `Object.entries(undefined)`. The contract belongs to this endpoint, so it
+    normalises rather than passing the stored blob through.
+    """
+    from api import inference
+    from api.config import Settings
+    from fastapi.testclient import TestClient
+
+    stale = inference.LoadedModel(
+        track="ancient",
+        module=None,
+        spec=__import__("cxr.preprocessing", fromlist=["PreprocessingSpec"]).PreprocessingSpec(),
+        metadata={"classes": ["a", "b"], "gates": {"acknowledged": ["G4"]}},
+    )
+    monkeypatch.setattr(inference, "registry", lambda _directory: {"ancient": stale})
+
+    app = create_app(Settings(media_root=tmp_path / "m", model_dir=str(tmp_path)))
+    gates = TestClient(app).get("/models").json()["models"][0]["gates"]
+
+    assert gates == {
+        "blocking": [],
+        "acknowledged": ["G4"],
+        "skipped": [],
+        "findings": {},
+    }

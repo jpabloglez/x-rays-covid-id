@@ -28,9 +28,9 @@ The gap between those numbers is the deliverable.
 | Dataset assembly, leakage gates | Working — six gates, measured values not pass/fail |
 | Training, calibration, lung ablation | Working — two tracks trained and ablated |
 | Inference API | Working — FastAPI, `POST /predict/` scores with both models |
-| Web UI | Working — upload scores with both models and shows what each is reading |
+| Web UI | Working — a scoring view and a report view, both driven by the loaded models |
 | User accounts | **None, by decision** — no database, no session, no personal data (see below) |
-| Test suite | 272 over the ML package, 19 over the API, 7 over the UI |
+| Test suite | 272 over the ML package, 20 over the API, 14 over the UI |
 
 What the app does today: you upload a JPEG or PNG, it is validated, stored
 under the hash of its own bytes, and scored by both models. The interface shows
@@ -41,6 +41,15 @@ The two models are shown side by side rather than combined. They answer
 different questions over different corpora, so agreement between them is not
 corroboration and disagreement is not a tie to break; the interface says so
 rather than leaving a reader to infer a consensus that does not exist.
+
+A second view reports what the loaded models are: their metrics, which leakage
+gates failed and what those gates measured, and how much of each model's signal
+survives having the lung fields blanked out. Every figure there is read from
+the models the server has loaded rather than written into the page, so it
+cannot describe a model that is not there.
+
+**Not deployed anywhere.** The compose stack runs locally and that is the
+intended scope — this is a demonstrative project, not a service.
 
 The roadmap — data acquisition, leakage controls, the model ladder, calibration
 and abstention, attribution overlays, reporting — is tracked separately from
