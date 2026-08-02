@@ -99,6 +99,12 @@ jobs:
         working-directory: app/frontend
         run: npm ci
 
+      - name: Tests
+        # Guards the one thing this UI must not silently lose: a probability
+        # rendered without the measurement of what produced it.
+        working-directory: app/frontend
+        run: npm test
+
       - name: Type-check and build
         working-directory: app/frontend
         run: npm run build

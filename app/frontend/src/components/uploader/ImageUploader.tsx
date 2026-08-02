@@ -1,28 +1,24 @@
-import React, { useState, ChangeEvent, FormEvent } from "react";
-
-interface UploadResponse {
-  detail: string;
-  imageUrl: string;
-}
-
-// Requests go through Vite's dev proxy, so the browser stays same-origin.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
+import React, { ChangeEvent, FormEvent, useState } from "react";
+import { PredictResponse, predict } from "../../api/predict";
+import PredictionPanel from "../prediction/PredictionPanel";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const ImageUpload: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+  const [result, setResult] = useState<PredictResponse | null>(null);
   const [error, setError] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
+  const [isScoring, setIsScoring] = useState(false);
 
-  // Function to handle file selection
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     setError("");
-    setUploadedImageUrl("");
+    setResult(null);
 
+    // Checked here as well as on the server. This is a courtesy to save a
+    // round trip, not a control: the server re-decodes every upload and never
+    // trusts the declared type.
     if (file && !ACCEPTED_TYPES.includes(file.type)) {
       setSelectedImage(null);
       setError("Please choose a JPEG or PNG image.");
@@ -36,7 +32,6 @@ const ImageUpload: React.FC = () => {
     setSelectedImage(file);
   };
 
-  // Function to handle form submission
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!selectedImage) {
@@ -44,61 +39,55 @@ const ImageUpload: React.FC = () => {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("image", selectedImage);
-
-    setIsUploading(true);
+    setIsScoring(true);
     setError("");
     try {
-      const response = await fetch(`${API_BASE_URL}/files/`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data: UploadResponse = await response.json();
-      if (!response.ok) {
-        setError(data.detail || "Upload failed.");
-        return;
-      }
-      setUploadedImageUrl(data.imageUrl);
-    } catch {
-      setError("Could not reach the server. Is the backend running?");
+      setResult(await predict(selectedImage));
+    } catch (thrown) {
+      setResult(null);
+      setError(thrown instanceof Error ? thrown.message : "Could not score that image.");
     } finally {
-      setIsUploading(false);
+      setIsScoring(false);
     }
   };
 
   return (
-    <div className="container">
-      <div className="row">
-        <h2 className="text-2xl text-black mb-4">Image Upload</h2>
-        <form onSubmit={handleSubmit}>
-          <input
-            type="file"
-            accept="image/jpeg, image/png"
-            onChange={handleFileSelect}
-            className="bg-blue-400 mb-2 content-center"
-          />
-          <div className="row text-black">Accepts jpg/jpeg and png files</div>
+    <div className="mx-auto max-w-4xl px-4 py-8">
+      <h2 className="text-2xl font-semibold text-slate-900">Score a chest radiograph</h2>
+      <p className="mt-2 max-w-2xl text-sm text-slate-700">
+        Two models are run: one trained on pooled public collections, one trained within a
+        single hospital network. They disagree often, and the disagreement is the point —
+        each answer arrives with a measurement of what it is actually reading.
+      </p>
 
-          <button
-            type="submit"
-            disabled={isUploading}
-            className="bg-blue-400 text-black mt-4 py-2 px-4 rounded disabled:opacity-50"
-          >
-            {isUploading ? "Uploading…" : "Upload"}
-          </button>
+      <form onSubmit={handleSubmit} className="mt-5">
+        <label htmlFor="radiograph" className="block text-sm font-medium text-slate-800">
+          Radiograph (JPEG or PNG, up to 20 MB)
+        </label>
+        <input
+          id="radiograph"
+          type="file"
+          accept="image/jpeg, image/png"
+          onChange={handleFileSelect}
+          className="mt-2 block w-full text-sm text-slate-700 file:mr-4 file:rounded file:border-0 file:bg-slate-800 file:px-4 file:py-2 file:text-white hover:file:bg-slate-700"
+        />
 
-          {error.length > 0 && (
-            <p role="alert" className="text-red-600 mt-2">
-              {error}
-            </p>
-          )}
-          {uploadedImageUrl.length > 0 && (
-            <img src={uploadedImageUrl} alt="Uploaded file" className="mt-2" />
-          )}
-        </form>
-      </div>
+        <button
+          type="submit"
+          disabled={isScoring}
+          className="mt-4 rounded bg-slate-800 px-4 py-2 text-white disabled:opacity-50"
+        >
+          {isScoring ? "Scoring…" : "Score"}
+        </button>
+      </form>
+
+      {error.length > 0 && (
+        <p role="alert" className="mt-4 rounded border border-red-300 bg-red-50 px-4 py-3 text-red-800">
+          {error}
+        </p>
+      )}
+
+      {result && <PredictionPanel result={result} />}
     </div>
   );
 };
