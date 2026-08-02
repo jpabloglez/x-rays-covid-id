@@ -3,7 +3,12 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  /* Inter was never actually loaded here -- no @font-face, no <link>, no
+     package -- so this line asserted a font that was not rendering. Named for
+     what the browser has actually been falling back to all along; Tailwind's
+     `font-sans` utility (see tailwind.config.cjs) is the same stack. */
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;

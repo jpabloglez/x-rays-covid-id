@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelsResponse } from "../../api/predict";
 import ModelReport from "./ModelReport";
@@ -82,10 +82,15 @@ describe("ModelReport", () => {
   it("shows the figures the server reports rather than any typed into the page", async () => {
     mockFetch(MODELS);
     render(<ModelReport />);
-    // If these ever have to be updated because a model changed, the page is
-    // reading them from the wrong place.
-    expect(await screen.findByText("0.9925")).toBeInTheDocument();
-    expect(screen.getByText("0.7460")).toBeInTheDocument();
+    // Scoped to each model's own card: the comparison chart now also renders
+    // these same figures elsewhere on the page, which is intentional -- an
+    // unscoped query would find both and correctly fail as ambiguous.
+    const track1Card = (await screen.findByRole("heading", { name: "track1" })).closest(
+      "article",
+    )!;
+    const track2Card = screen.getByRole("heading", { name: "track2" }).closest("article")!;
+    expect(within(track1Card).getByText("0.9925")).toBeInTheDocument();
+    expect(within(track2Card).getByText("0.7460")).toBeInTheDocument();
   });
 
   it("states what each failing gate measured, not just that it failed", async () => {
@@ -131,5 +136,37 @@ describe("ModelReport", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("boom")));
     render(<ModelReport />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the server");
+  });
+
+  it("charts the AUC comparison with both tracks' real figures", async () => {
+    mockFetch(MODELS);
+    render(<ModelReport />);
+    const chart = await screen.findByRole("img", { name: /Test macro AUC/ });
+    expect(chart).toHaveAccessibleName("Test macro AUC: track1 0.9925, track2 0.7460");
+  });
+
+  it("charts the retention comparison, colored by the same severity map as the badge", async () => {
+    mockFetch(MODELS);
+    render(<ModelReport />);
+    const chart = await screen.findByRole("img", { name: /Retention, lungs removed/ });
+    expect(chart).toHaveAccessibleName(
+      "Retention, lungs removed: track1 91.5%, track2 83.7%",
+    );
+  });
+
+  it("charts the calibration comparison", async () => {
+    mockFetch(MODELS);
+    render(<ModelReport />);
+    const chart = await screen.findByRole("img", { name: /ECE after calibration/ });
+    expect(chart).toHaveAccessibleName("ECE after calibration: track1 0.0069, track2 0.0854");
+  });
+
+  it("renders no comparison charts when no models are loaded", async () => {
+    // An axis with nothing plotted underneath a "no models" banner would
+    // contradict that banner. The section must not render at all.
+    mockFetch({ disclaimer: "d", models: [] });
+    render(<ModelReport />);
+    await screen.findByTestId("no-models");
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });

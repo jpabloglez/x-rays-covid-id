@@ -1,15 +1,10 @@
 import React from "react";
-import { Prediction, retentionVerdict, severityOf } from "../../api/predict";
+import { Prediction } from "../../api/predict";
+import { RetentionVerdict } from "../severity/SeverityBadge";
 
 // The retention badge sits next to the probability rather than below the fold.
 // A reader who takes the number and stops reading should still have walked
 // past the sentence saying what the number is made of.
-const SEVERITY_STYLES: Record<string, string> = {
-  high: "bg-red-50 border-red-300 text-red-900",
-  moderate: "bg-amber-50 border-amber-300 text-amber-900",
-  low: "bg-emerald-50 border-emerald-300 text-emerald-900",
-  unmeasured: "bg-slate-100 border-slate-300 text-slate-700",
-};
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 
@@ -18,7 +13,6 @@ interface Props {
 }
 
 const PredictionCard: React.FC<Props> = ({ prediction }) => {
-  const severity = severityOf(prediction.lungs_removed_retention);
   const ordered = [...prediction.classes].sort(
     (a, b) => (prediction.probabilities[b] ?? 0) - (prediction.probabilities[a] ?? 0),
   );
@@ -35,14 +29,18 @@ const PredictionCard: React.FC<Props> = ({ prediction }) => {
         <span className="text-sm text-slate-600">
           {prediction.classes.length}-class
           {prediction.macro_auc !== null && (
-            <> · test AUC {prediction.macro_auc.toFixed(4)}</>
+            <>
+              {" "}
+              · test AUC{" "}
+              <span className="font-mono tabular-nums">{prediction.macro_auc.toFixed(4)}</span>
+            </>
           )}
         </span>
       </header>
 
       <p className="mt-3 text-sm text-slate-700">
         Most likely: <strong className="font-semibold">{prediction.predicted}</strong> at{" "}
-        {percent(prediction.confidence)}
+        <span className="font-mono tabular-nums">{percent(prediction.confidence)}</span>
       </p>
 
       <ul className="mt-3 space-y-2" aria-label={`${prediction.track} class probabilities`}>
@@ -52,7 +50,7 @@ const PredictionCard: React.FC<Props> = ({ prediction }) => {
             <li key={name}>
               <div className="flex justify-between text-sm">
                 <span>{name}</span>
-                <span className="tabular-nums">{percent(value)}</span>
+                <span className="font-mono tabular-nums">{percent(value)}</span>
               </div>
               <div className="mt-1 h-2 w-full rounded bg-slate-200">
                 <div
@@ -65,12 +63,12 @@ const PredictionCard: React.FC<Props> = ({ prediction }) => {
         })}
       </ul>
 
-      <p
-        className={`mt-4 rounded border px-3 py-2 text-sm ${SEVERITY_STYLES[severity]}`}
-        data-testid={`retention-${prediction.track}`}
-      >
-        {retentionVerdict(prediction.lungs_removed_retention)}
-      </p>
+      <div className="mt-4">
+        <RetentionVerdict
+          retention={prediction.lungs_removed_retention}
+          testId={`retention-${prediction.track}`}
+        />
+      </div>
 
       {prediction.caveats.length > 0 && (
         <details className="mt-3 text-sm text-slate-700" open>

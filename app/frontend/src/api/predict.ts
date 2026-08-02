@@ -160,3 +160,37 @@ export async function fetchModels(): Promise<ModelsResponse> {
   const payload = (await response.json()) as Partial<ModelsResponse>;
   return { disclaimer: payload.disclaimer ?? "", models: payload.models ?? [] };
 }
+
+// --------------------------------------------------------------- /health
+
+export interface HealthResponse {
+  status: string;
+  models: string[];
+  inference_available: boolean;
+}
+
+/**
+ * Whether scoring is even possible right now.
+ *
+ * Checked proactively on the score view so an empty MODEL_DIR shows as a
+ * distinct "this deployment isn't set up yet" state rather than waiting for
+ * the user to submit a file and get back a 503 that looks identical to a
+ * validation error.
+ */
+export async function fetchHealth(): Promise<HealthResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/health`);
+  } catch {
+    throw new PredictError("Could not reach the server. Is the backend running?", 0);
+  }
+  if (!response.ok) {
+    throw new PredictError("Could not check server status.", response.status);
+  }
+  const payload = (await response.json()) as Partial<HealthResponse>;
+  return {
+    status: payload.status ?? "",
+    models: payload.models ?? [],
+    inference_available: payload.inference_available ?? false,
+  };
+}
