@@ -11,6 +11,12 @@ from. Retrain within a single hospital network, where positives and negatives
 share scanners and period, and the score falls to **0.7460** with 83.7% still
 surviving the same ablation.
 
+Then measure what Track 2 is actually reading, and it gets worse: **a lookup
+table that only knows which x-ray machine took the image — and never looks at
+the image — scores 0.7640 AUC against the network's 0.7460** on the same test
+split. Track 2 escaped the confound it was built to escape, and was defeated
+by the next one down.
+
 The gap between those numbers is the deliverable.
 **[`ml/RESULTS.md`](ml/RESULTS.md) is the write-up.**
 
@@ -19,7 +25,7 @@ The gap between those numbers is the deliverable.
 | Area | State |
 | --- | --- |
 | Image upload and display | Working |
-| Dataset assembly, leakage gates | Working — five gates, measured values not pass/fail |
+| Dataset assembly, leakage gates | Working — six gates, measured values not pass/fail |
 | Training, calibration, lung ablation | Working — two tracks trained and ablated |
 | Inference API | Working — FastAPI, `POST /predict/` scores with both models |
 | User accounts and organisations | Models only; the API was removed (see below) |

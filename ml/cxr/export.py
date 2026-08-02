@@ -68,6 +68,14 @@ def describe(checkpoint: Checkpoint, ablation: list[dict] | None = None) -> dict
             # passes so a consumer counting green ticks cannot mistake one for
             # the other -- which the runner itself did until recently.
             "skipped": checkpoint.gates.get("skipped", []),
+            # What each non-passing gate actually found. A caveat naming "G5"
+            # and nothing else tells a reader that something is wrong without
+            # telling them what, which is close to telling them nothing.
+            "findings": {
+                entry["gate"]: entry.get("summary", "")
+                for entry in checkpoint.gates.get("gates", [])
+                if entry.get("status") in {"fail", "failed"}
+            },
         },
         "ablation": {
             "lungs_removed_retention": removed.get("retention") if removed else None,
@@ -90,11 +98,20 @@ def export(
     out: Path,
     *,
     ablation: Path | None = None,
+    gates: Path | None = None,
 ) -> dict[str, Any]:
-    """Trace the model and write it with its metadata into one file."""
+    """Trace the model and write it with its metadata into one file.
+
+    `gates` overrides the report embedded at training time. Gates get added --
+    G5 did not exist when Track 2 was trained -- and a served model quoting the
+    confound profile of a shorter checklist is claiming a clean bill of health
+    from an examination that was never performed.
+    """
     import torch
 
     checkpoint = Checkpoint.read(checkpoint_dir)
+    if gates is not None:
+        checkpoint.gates = json.loads(Path(gates).read_text(encoding="utf-8"))
     model = build_model(checkpoint.model)
     model.load_state_dict(torch.load(checkpoint_dir / "weights.pt", map_location="cpu"))
     model.eval()

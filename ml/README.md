@@ -47,6 +47,7 @@ driven by the registry, not hardcoded, so it retired itself.
 | **G2** | No perceptual-hash cluster spans two splits | Aggregate collections reposting each other's images, re-encoded |
 | **G3** | Source is not predictable from pixels | Acquisition signatures a network can read for free |
 | **G4** | Class and source are independent | How much of the label is available from provenance alone |
+| **G5** | Class and acquisition device are independent | The confound G4 cannot see when there is only one source |
 
 Each returns a measured value, not just pass/fail — `G4 passed` is far less
 useful than `Cramér's V 0.31, threshold 0.40`, and the measured numbers are

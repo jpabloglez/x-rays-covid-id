@@ -267,7 +267,7 @@ def test_runner_reports_every_gate_rather_than_stopping_at_the_first(confounded_
     root, frame = confounded_corpus
     assigned = splits.assign(frame, SplitConfig(n_folds=4, calibration_folds=4))
     results = run_all(frame, assigned, image_root=root)
-    assert {result.gate for result in results} == {"G1", "G1b", "G2", "G3", "G4"}
+    assert {result.gate for result in results} == {"G1", "G1b", "G2", "G3", "G4", "G5"}
 
 
 def test_runner_skips_g3_without_pixels(clean_corpus):
@@ -286,7 +286,9 @@ def test_results_serialise_for_the_model_card(clean_corpus, tmp_path):
     import json
 
     payload = json.loads(path.read_text())
-    assert {entry["gate"] for entry in payload["gates"]} == {"G1", "G1b", "G2", "G3", "G4"}
+    assert {entry["gate"] for entry in payload["gates"]} == {
+        "G1", "G1b", "G2", "G3", "G4", "G5",
+    }
     probe = next(entry for entry in payload["gates"] if entry["gate"] == "G3")
     assert probe["measured"] is not None
     assert payload["training_permitted"] is True

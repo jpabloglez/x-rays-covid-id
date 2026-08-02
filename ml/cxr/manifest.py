@@ -84,7 +84,19 @@ COLUMNS: dict[str, str] = {
     # Lung segmentation mask, where the source ships one. The in-lung
     # attribution metric in Phase D is only computable for rows that have it.
     "mask_path": "string",
+    # The acquisition device, where the source records it. Within a single
+    # collection, source is constant and the scanner is the confound that
+    # remains -- it is the finest-grained acquisition signature available, and
+    # the thing a within-source probe has to be run against.
+    "manufacturer": "string",
+    "scanner_model": "string",
 }
+
+# Columns added after the first manifests were written. `validate` backfills
+# them as null instead of rejecting the frame, so a corpus assembled before
+# they existed still loads. Re-hashing 30,016 images to gain two columns that
+# its sources never recorded would be a poor trade.
+OPTIONAL_COLUMNS = ("manufacturer", "scanner_model")
 
 REQUIRED_NON_NULL = (
     "image_id",
@@ -125,6 +137,15 @@ def validate(frame: pd.DataFrame) -> pd.DataFrame:
     adapter one error per run is miserable.
     """
     problems: list[str] = []
+
+    absent = [name for name in OPTIONAL_COLUMNS if name not in frame.columns]
+    if absent:
+        # Backfilled rather than rejected, so manifests written before these
+        # columns existed still load. Mutating a copy: validate promises to
+        # return the frame unchanged, and callers rely on that.
+        frame = frame.copy()
+        for name in absent:
+            frame[name] = pd.Series([None] * len(frame), dtype=COLUMNS[name], index=frame.index)
 
     missing = [name for name in COLUMNS if name not in frame.columns]
     if missing:
