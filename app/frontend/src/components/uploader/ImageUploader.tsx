@@ -101,7 +101,7 @@ const ImageUpload: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
+    <div className="w-full py-2">
       <h2 className="text-2xl font-semibold text-slate-900">Score a chest radiograph</h2>
       <p className="mt-2 max-w-2xl text-sm text-slate-700">
         Two models are run: one trained on pooled public collections, one trained within a
