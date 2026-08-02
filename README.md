@@ -28,17 +28,19 @@ The gap between those numbers is the deliverable.
 | Dataset assembly, leakage gates | Working — six gates, measured values not pass/fail |
 | Training, calibration, lung ablation | Working — two tracks trained and ablated |
 | Inference API | Working — FastAPI, `POST /predict/` scores with both models |
-| User accounts and organisations | Models only; the API was removed (see below) |
-| Test suite | 264 over the ML package, 16 over the API |
+| Web UI | Working — upload scores with both models and shows what each is reading |
+| User accounts | **None, by decision** — no database, no session, no personal data (see below) |
+| Test suite | 272 over the ML package, 19 over the API, 7 over the UI |
 
-What the app does today: you upload a JPEG or PNG, the backend validates and
-stores it under a content-addressed name, and `POST /predict/` scores it with
-both models — returning each one's probabilities alongside its gate report,
-its lung-ablation retention and the caveats that follow from them.
+What the app does today: you upload a JPEG or PNG, it is validated, stored
+under the hash of its own bytes, and scored by both models. The interface shows
+each model's probabilities beside a measurement of what that model is actually
+reading — never a probability on its own.
 
-**The frontend does not call `/predict/` yet.** It uploads and renders the
-image back, and nothing in the interface shows a prediction; wiring that up is
-Phase E. This table is the source of truth, not the UI.
+The two models are shown side by side rather than combined. They answer
+different questions over different corpora, so agreement between them is not
+corroboration and disagreement is not a tie to break; the interface says so
+rather than leaving a reader to infer a consensus that does not exist.
 
 The roadmap — data acquisition, leakage controls, the model ladder, calibration
 and abstention, attribution overlays, reporting — is tracked separately from
